@@ -34,7 +34,7 @@
     "passport": "^0.4.0",
     "passport-http": "^0.3.0",
     "passport-jwt": "^4.0.0",
-    "pug": "2.0.0-beta11",
+    "pug": "^2.0.4",
     "read-chunk": "^3.0.0",
     "request": "^2.88.0",
     "sharp": "^0.22.0"
