@@ -125,7 +125,7 @@ const updateTitle = ({user, body, params}, res, next) => {
     if (body.title === undefined || body.title === null)
         return res.status(400).json({
             errors:
-                "Path title is required!"
+                "Title is required!"
         }).end();
 
     if (!(typeof body.title === 'string' || body.title instanceof String))
