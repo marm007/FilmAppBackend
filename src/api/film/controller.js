@@ -1,4 +1,6 @@
 const {createModel} = require("mongoose-gridfs");
+const mongoose = require('mongoose');
+const async = require('async');
 
 const _ = require("lodash");
 
@@ -16,375 +18,193 @@ const ObjectId = require('mongoose').Types.ObjectId;
 
 const sharp = require('sharp');
 
+const unlinkGridFs = async (filmId, ...thumbnailIds) => {
+
+    const FilmGridFs = require('./gridfs');
+    const ThumbnailGridFs = require('../thumbnail/gridfs');
+
+    console.log(thumbnailIds)
+    if (filmId) await FilmGridFs.unlink({_id: filmId}, (err, doc) => {
+    });
+
+    for (let id of thumbnailIds) {
+        if (!id) continue;
+        await ThumbnailGridFs.unlink({_id: id}, (err, doc) => {
+        });
+    }
+};
 
 const create = async (req, res, next) => {
 
     handleGridFsUpload(req, res, async (err) => {
-        console.log(req.params);
-        console.log(req.body);
-        if (err) {
-            return res.status(404).send({error: err.message});
-        }
 
         const user = req.user;
 
-        if (!req.files || !req.files.thumbnail || !req.files.file) {
-            return res.status(404).send({error: 'Film or thumbnail not found'});
+        if (err) return res.status(404).send({error: err.message});
+
+        if (!req.files || !req.files.thumbnail || !req.files.film) return res.status(404).send({error: 'Film or thumbnail not found'});
+
+        if (!req.body.title || req.body.title === '') {
+            await unlinkGridFs(req.files.film[0].id, req.files.thumbnail[0].id);
+            return res.status(400).send({error: `Path title is required!`})
+        }
+
+        if (!req.body.description || req.body.description === '') {
+            await unlinkGridFs(req.files.film[0].id, req.files.thumbnail[0].id);
+            return res.status(400).send({error: `Path description is required!`})
         }
 
 
         const ThumbnailGridFs = require('../thumbnail/gridfs');
-        const ThumbnailGridFsSmall = require('../thumbnail/gridfs');
 
-        ThumbnailGridFs.findById({_id: req.files.thumbnail[0].id}, (err, thumbnail) => {
-            const [originalName, mime] = thumbnail.metadata.originalname.split('.');
-            let filmStream = ThumbnailGridFs.read({filename: thumbnail.filename});
+        let thumbnail = await ThumbnailGridFs.findById({_id: req.files.thumbnail[0].id});
 
-            let buffer = [];
+        if (!thumbnail) return res.status(404).send({error: 'Thumbnail dose not exists!'});
 
-            filmStream.on('data', function (chunk) {
-                buffer.push(chunk);
-            });
+        const [originalName, mime] = thumbnail.metadata.originalname.split('.');
+        let filmStream = await ThumbnailGridFs.read({filename: thumbnail.filename});
 
-            filmStream.on('end', async function () {
+        let buffer = [];
 
-                let all = new Buffer.concat(buffer);
-
-                const previewName = originalName + Date.now() + '_preview.' + mime;
-                const fileName = originalName + Date.now() + '_thumbnail.' + mime;
-                const posterName = originalName + Date.now() + '_poster.' + mime;
-
-
-                let thumbnailBody = {
-                    _id: req.files.thumbnail[0].id,
-                };
-                await sharp(all)
-                    .resize(25, Math.round(25 * 9 / 16))
-                    .toBuffer(previewName, (err, buff) => {
-
-                        let stream = require('stream');
-
-                        let bufferStream = new stream.PassThrough();
-
-                        bufferStream.end(buff);
-
-                        ThumbnailGridFsSmall.write({filename: previewName}, bufferStream,
-                            async (error, file) => {
-
-                                thumbnailBody.preview = file._id;
-
-                                await sharp(all)
-                                    .resize(250, Math.round(250 * 9 / 16))
-                                    .toBuffer(fileName, (err, buff) => {
-
-                                        let stream = require('stream');
-
-                                        let bufferStream = new stream.PassThrough();
-
-                                        bufferStream.end(buff);
-
-                                        ThumbnailGridFsSmall.write({filename: fileName}, bufferStream,
-                                            async (error, file) => {
-
-                                                thumbnailBody.small = file._id;
-
-                                                await sharp(all)
-                                                    .resize(500, Math.round(500 * 9 / 16))
-                                                    .toBuffer(posterName, (err, buff) => {
-                                                        let stream = require('stream');
-
-                                                        let bufferStream = new stream.PassThrough();
-
-                                                        bufferStream.end(buff);
-                                                        ThumbnailGridFsSmall.write({filename: posterName}, bufferStream,
-                                                            async (error, file) => {
-
-                                                                const filmBody = {
-                                                                    _id: req.files.file[0].id,
-                                                                    author: user.id,
-                                                                    description: req.body.description,
-                                                                    title: req.body.title
-                                                                };
-
-                                                                let film = null;
-
-                                                                thumbnailBody.poster = file._id;
-                                                                filmBody.thumbnail = thumbnailBody;
-                                                                try {
-                                                                    film = await Film.create(filmBody)
-                                                                        .then((film) => film.view(true));
-                                                                } catch (e) {
-                                                                    res.status(400).send(e).end();
-                                                                }
-
-                                                                if (film) {
-                                                                    user.films.push(film.id);
-
-                                                                    {
-                                                                        await user.save();
-                                                                        success(res, 201)(film);
-                                                                    }
-                                                                }
-                                                            });
-                                                    });
-                                            });
-                                    });
-                            });
-                    });
-            });
+        await filmStream.on('data', function (chunk) {
+            buffer.push(chunk);
         });
-    });
-};
+
+        await filmStream.on('end', async function () {
+            let all = new Buffer.concat(buffer);
+
+            const previewName = originalName + Date.now() + '_preview.' + mime;
+            const fileName = originalName + Date.now() + '_thumbnail.' + mime;
+            const posterName = originalName + Date.now() + '_poster.' + mime;
 
 
-const index = ({query}, res, next) => {
+            let thumbnailBody = {
+                _id: req.files.thumbnail[0].id,
+            };
 
-    let projection = {
-        title: 'title', meta: 'meta', id: '_id', thumbnail: 'thumbnail', author: 'author',
-        description: 'description', createdAt: 'createdAt'
-    };
+            const previewBuffer = await sharp(all)
+                .resize(25, Math.round(25 * 9 / 16))
+                .toBuffer();
 
-    let exclude = {};
+            const smallBuffer = await sharp(all)
+                .resize(250, Math.round(250 * 9 / 16))
+                .toBuffer();
 
-    if (query.exclude && !ObjectId.isValid(query.exclude)) {
-        return res.status(400).end();
-    }
+            const posterBuffer = await sharp(all)
+                .resize(500, Math.round(500 * 9 / 16))
+                .toBuffer();
 
-    if (query.exclude)
-        exclude = {_id: {$nin: [query.exclude]}};
-
-
-    Film.find(exclude, projection).skip(parseInt(query.start)).limit(parseInt(query.limit))
-        .then(films => {
-            const requests = [];
-
-            films.map((film) => {
-                requests.push(
-                    User.findById(film.author, 'nick')
-                        .then(author => {
-                            film.set('author_name', author.nick, {strict: false});
-                            return film;
-                        }).catch(next))
-            });
-
-            Promise.all(requests).then((films) => {
-                return films;
-            })
-                .then((films) => films.map((film) => {
-
-                    return {
-                        author: film.author,
-                        title: film.title,
-                        description: film.description,
-                        views: film.meta.views,
-                        thumbsUp: film.meta.likes,
-                        thumbsDown: film.meta.dislikes,
-                        thumbnail: film.thumbnail,
-                        id: film._id,
-                        createdAt: film.createdAt,
-                        author_name: film.get('author_name')
-                    };
-                }))
-                .then(success(res))
-                .catch(next);
-
-
-        });
-};
-
-const indexOnlyTitle = ({query}, res, next) => {
-
-    let projection = {
-        title: 'title'
-    };
-
-    let exclude = {};
-
-    if (query.exclude && !ObjectId.isValid(query.exclude)) {
-        return res.status(400).end();
-    }
-
-    if (query.exclude)
-        exclude = {_id: {$nin: [query.exclude]}};
-
-
-    Film.find({title: new RegExp(query.search)}, projection).skip(parseInt(query.start)).limit(parseInt(query.limit))
-        .then(films => {
-            console.log(films);
-            films = films.map(film => {
-                return {
-                    id: film._id,
-                    title: film.title
-                };
-            });
-            console.log(films);
-            return films;
-        })
-        .then(success(res))
-        .catch(next);
-
-};
-
-
-const showFilm = (req, res, next) => {
-
-    const {params} = req;
-
-    const FilmGridFs = require('./gridfs');
-
-
-    FilmGridFs.findById({start: 10, end: 20, _id: params.id}, (err, film) => {
-        if (err || film === null) return notFound(res)();
-
-        if (req.headers['range']) {
-
-            console.log("HEAD RANGE");
-            let positions = req.headers['range'].replace(/bytes=/, "").split("-");
-            let start = parseInt(positions[0], 10);
-            let total = film.length;
-            let end = positions[1] ? parseInt(positions[1], 10) : total - 1;
-            let chunksize = (end - start) + 1;
-
-            let maxChunk = 1024 * 1024; // 1MB at a time
-            if (chunksize > maxChunk) {
-                end = start + maxChunk - 1;
-                chunksize = (end - start) + 1;
+            if (!previewBuffer || !smallBuffer || !posterBuffer) {
+                return res.status(400).send({error: 'Bad request!'})
             }
 
-            res.writeHead(206, {
-                'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
-                'Accept-Ranges': 'bytes',
-                'Content-Length': chunksize,
-                'Content-Type': film.contentType
-            });
+            let stream = require('stream');
 
-
-            let filmStream = FilmGridFs.read({start: start, end: end, filename: film.filename});
-            filmStream.pipe(res);
-
-        } else {
-            console.log("NORMAl REQUEST");
-            res.header('Content-Type', film.contentType);
-            res.header('Content-Length', film.length);
-            let filmStream = FilmGridFs.read({filename: film.filename});
-            filmStream.pipe(res);
-        }
-    });
-
-};
-
-
-const showOneFilmDescriptionWithoutComments = (req, res, next) => {
-
-
-    let projection = {
-        title: 'title', meta: 'meta', id: '_id', thumbnail: 'thumbnail', author: 'author',
-        description: 'description', createdAt: 'createdAt'
-    };
-
-    if (!ObjectId.isValid(req.params.id)) {
-        return res.status(400).end();
-    }
-
-    Film.findById(req.params.id, projection)
-        .then(notFound(res))
-        .then(film => {
-            if (film !== null) {
-
-                User.findById(film.author, 'nick')
-                    .then(author => {
-                        return {
-                            author: film.author,
-                            title: film.title,
-                            description: film.description,
-                            views: film.meta.views,
-                            thumbsUp: film.meta.likes,
-                            thumbsDown: film.meta.dislikes,
-                            thumbnail: film.thumbnail,
-                            id: film._id,
-                            createdAt: film.createdAt,
-                            author_name: author.nick
-                        };
+            async.waterfall([
+                function (done) {
+                    let bufferStream = new stream.PassThrough();
+                    bufferStream.end(previewBuffer);
+                    ThumbnailGridFs.write({
+                        filename: previewName,
+                        contentType: thumbnail.contentType
+                    }, bufferStream, (error, file) => {
+                        thumbnailBody.preview = file._id;
+                        done(error)
                     })
-                    .then(film => {
-                        Film.aggregate([{$match: {_id: film.id}}, {$project: {commentsLength: {$size: '$comments'}}}])
-                            .then(commentsLength => {
-                                film.commentsLength = commentsLength[0].commentsLength;
-                                return film;
-                            })
-                            .then(success(res))
-                            .catch(next);
+                },
+                function (done) {
+                    let bufferStream = new stream.PassThrough();
+                    bufferStream.end(smallBuffer);
+
+                    ThumbnailGridFs.write({
+                        filename: fileName,
+                        contentType: thumbnail.contentType
+                    }, bufferStream, (error, file) => {
+                        thumbnailBody.small = file._id;
+                        done(error)
                     })
-                    .catch(next);
-            }
-        })
-        .then((film) => film ? film.view(true) : null)
-        .then(success(res))
-        .catch(next);
+                },
+                function (done) {
+                    let bufferStream = new stream.PassThrough();
+                    bufferStream.end(posterBuffer);
 
-
-};
-
-const showOneFilmDescriptionAndComments = (req, res, next) => {
-
-    if (!ObjectId.isValid(req.params.id)) {
-        return res.status(400).end();
-    }
-
-    Film.findOne({_id: req.params.id},
-        {'comments': {$slice: [parseInt(req.query.start), parseInt(req.query.limit)]}})
-        .populate('comments')
-        .then(notFound(res))
-        .then(film => {
-
-            let comments = film.comments;
-
-            const requests = [];
-
-            comments.forEach(comment => {
-                requests.push(
-                    User.findById(comment.author_id, 'nick')
-                        .then(author => {
-                            return ({
-                                id: comment._id,
-                                author: author.nick,
-                                comment: comment.text,
-                                createdAt: comment.createdAt
-                            });
-                        }).catch(next));
-
-            });
-
-            Promise.all(requests).then((comments) => {
-                User.findById(film.author, 'nick')
-                    .then(author => {
-                        return {
-                            author: film.author,
-                            title: film.title,
-                            description: film.description,
-                            views: film.meta.views,
-                            thumbsUp: film.meta.likes,
-                            thumbsDown: film.meta.dislikes,
-                            thumbnail: film.thumbnail,
-                            id: film._id,
-                            createdAt: film.createdAt,
-                            comments: comments,
-                            author_name: author.nick
-                        };
+                    ThumbnailGridFs.write({
+                        filename: posterName,
+                        contentType: thumbnail.contentType
+                    }, bufferStream, (error, file) => {
+                        thumbnailBody.poster = file._id;
+                        done(error)
                     })
-                    .then(success(res))
-                    .catch(next);
-            });
+                }
+            ], async function (err) {
 
+                if (err) {
+                    let message = err.message ? err.message : 'Something went wrong!';
+                    await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
+                    return res.status(400).send({error: message})
+                }
 
-        })
-        .catch(next => {
-            return res.status(400).json({
-                errors: next.errmsg
+                const filmBody = {
+                    _id: req.files.film[0].id,
+                    author: user.id,
+                    authorName: user.nick,
+                    description: req.body.description,
+                    title: req.body.title
+                };
+
+                const session = await mongoose.startSession();
+
+                await session.withTransaction(async function executor() {
+                    filmBody.thumbnail = thumbnailBody;
+
+                    let film = await Film.create([filmBody], {session: session})
+                        .then((film) => film[0].view(true));
+                    let user = await User.findById(req.user._id, '_id nick films').session(session);
+                    user.films.push(film.id);
+                    await user.save();
+
+                    await session.commitTransaction();
+                    session.endSession();
+                    return success(res, 201)(film);
+                }).catch(async (err) => {
+                    await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
+                    return res.status(400).send({error: 'Something went wrong!'})
+                })
             })
-        });
+        })
+    })
+
 };
 
+const index = (req, res, next) => {
+
+    if (!ObjectId.isValid(req.params.id)) return res.status(400).end();
+
+    let {comments} = req.query;
+
+    if (comments) {
+
+        Film.findOne({_id: req.params.id},
+            {'comments': {$slice: [parseInt(req.query.start), parseInt(req.query.limit)]}})
+            .populate('comments')
+            .then(notFound(res))
+            .then(film => film.view(true, true))
+            .then(success(res))
+            .catch(next => {
+                return res.status(400).json({
+                    errors: next.errmsg
+                })
+            });
+
+    } else {
+
+        Film.findById(req.params.id)
+            .then(notFound(res))
+            .then(film => film.view(true))
+            .then(success(res))
+            .catch(next);
+    }
+};
 
 const showThumbnail = async ({params, query}, res, next) => {
 
@@ -408,10 +228,11 @@ const showThumbnail = async ({params, query}, res, next) => {
         ratio = parseInt(r[0]) / parseInt(r[1]);
     }
 
-    if (query.width) {
+    if (query.width && !Number.isNaN(parseInt(query.width))) {
         width = parseInt(query.width);
         height = Math.round(width / ratio);
     }
+
     let thumbnailId = film.thumbnail._id;
 
     if (query.width && query.width === 'small') {
@@ -422,12 +243,12 @@ const showThumbnail = async ({params, query}, res, next) => {
         thumbnailId = film.thumbnail.poster;
     }
 
-  if (query.width && query.width === 'preview') {
+    if (query.width && query.width === 'preview') {
         thumbnailId = film.thumbnail.preview;
     }
 
 
-    ThumbnailGridFs.findById({_id: ObjectId(thumbnailId)}, (err, thumbnail) => {
+    await ThumbnailGridFs.findById({_id: ObjectId(thumbnailId)}, (err, thumbnail) => {
 
 
         if (err || thumbnail === null)
@@ -470,18 +291,95 @@ const showThumbnail = async ({params, query}, res, next) => {
 
 };
 
+const getVideo = (req, res, next) => {
+
+    const {params} = req;
+
+    const FilmGridFs = require('./gridfs');
+
+
+    FilmGridFs.findById({start: 10, end: 20, _id: params.id}, (err, film) => {
+        if (err || film === null) return notFound(res)();
+
+        if (req.headers['range']) {
+
+            let positions = req.headers['range'].replace(/bytes=/, "").split("-");
+            let start = parseInt(positions[0], 10);
+            let total = film.length;
+            let end = positions[1] ? parseInt(positions[1], 10) : total - 1;
+            let chunksize = (end - start) + 1;
+
+            let maxChunk = 1024 * 1024; // 1MB at a time
+            if (chunksize > maxChunk) {
+                end = start + maxChunk - 1;
+                chunksize = (end - start) + 1;
+            }
+
+            res.writeHead(206, {
+                'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': film.contentType
+            });
+
+
+            let filmStream = FilmGridFs.read({start: start, end: end, filename: film.filename});
+            filmStream.pipe(res);
+
+        } else {
+            res.header('Content-Type', film.contentType);
+            res.header('Content-Length', film.length);
+            let filmStream = FilmGridFs.read({filename: film.filename});
+            filmStream.pipe(res);
+        }
+    });
+
+};
+
+const getAll = ({query}, res, next) => {
+
+    let exclude = {};
+
+    if (query.exclude && !ObjectId.isValid(query.exclude)) return res.status(400).end();
+
+    if (query.exclude) exclude = {_id: {$nin: [query.exclude]}};
+
+    Film.find(exclude)
+        .skip(parseInt(query.start)).limit(parseInt(query.limit))
+        .then(film => film.map(film => film.view(true)))
+        .then(success(res))
+        .catch(next);
+};
+
+const getAllOnlyTitle = ({query}, res, next) => {
+
+    let projection = {
+        title: 'title'
+    };
+
+    Film.find({title: new RegExp(query.search)}, projection)
+        .skip(parseInt(query.start)).limit(parseInt(query.limit))
+        .then(films => films.map(film => {
+            return {id: film._id, title: film.title}
+        }))
+        .then(success(res))
+        .catch(next);
+
+};
 
 const update = function ({user, body, params}, res, next) {
 
-    if (!Object.keys(body).length)
-        return res.status(400).end();
+    if(!Object.keys(body).length || !body.title || !body.description)
+        return res.status(400).send({error: 'Please provide title and description to perform a full film update!'})
+
+
+    let filmBody = {title: body.title, description: body.description}
 
     if (user.role === 'admin' || (user.films.indexOf(params.id) > -1)) {
 
-
         Film.findById(params.id)
             .then(notFound(res))
-            .then((film) => film ? Object.assign(film, body).save() : null)
+            .then((film) => film ? Object.assign(film, filmBody).save() : null)
             .then((film) => film ? film.view(true) : null)
             .then(success(res))
             .catch(next);
@@ -491,6 +389,34 @@ const update = function ({user, body, params}, res, next) {
     }
 
 };
+
+
+
+const partialUpdate = function ({user, body, params}, res, next) {
+
+    if (!Object.keys(body).length)
+        return res.status(400).send({error: 'Please provide title or description to perform a partial film update!'})
+
+    let filmBody = {}
+
+    if(body.title) filmBody = {...filmBody, title: body.title}
+    if(body.description) filmBody = {...filmBody, description: body.description}
+
+    if (user.role === 'admin' || (user.films.indexOf(params.id) > -1)) {
+
+        Film.findById(params.id)
+            .then(notFound(res))
+            .then((film) => film ? Object.assign(film, filmBody).save() : null)
+            .then((film) => film ? film.view(true) : null)
+            .then(success(res))
+            .catch(next);
+
+    } else {
+        return res.status(403).end()
+    }
+
+};
+
 
 
 const updateMeta = function ({body, params}, res, next) {
@@ -512,117 +438,52 @@ const updateMeta = function ({body, params}, res, next) {
 
 
 const destroy = async (req, res, next) => {
+    const session = await mongoose.startSession()
 
+    await session.withTransaction(async function executor() {
+        const { film_id } = req.params;
 
-    const {film_id} = req.params;
-    const user = req.user;
+        if (!ObjectId.isValid(film_id)) return res.status(400).end();
 
-    const FilmGridFs = require('./gridfs');
+        const user = req.user;
 
-    const ThumbnailGridFs = require('../thumbnail/gridfs');
+        let film = await Film
+            .findOne({_id: film_id}).session(session);
 
+        if (film === null) return notFound(res)(null);
 
-    await FilmGridFs.unlink({_id: film_id}, (err, doc) => {
-        if (err || doc === null) {
-            return notFound(res)(doc);
-        }
-    });
-
-    let film = await Film
-        .findOne({_id: film_id});
-
-    if (film === null) {
-        return notFound(res)(null);
-    }
-
-    await ThumbnailGridFs.unlink({_id: film.thumbnail.id}, (err, doc) => {
-        if (err || doc === null) {
-            return notFound(res)(doc);
-        }
-    });
-
-    await ThumbnailGridFs.unlink({_id: film.thumbnail.small}, (err, doc) => {
-        if (err || doc === null) {
-            return notFound(res)(doc);
+        if (user.films.indexOf(film_id) > -1) {
+            await User.findOneAndUpdate({_id: user.id},
+                {"$pull": {"films": film_id, "comments": {"$in": film.comments}}}).session(session);
+        } else if (user.role === 'admin') {
+            await User.findOneAndUpdate({"films": {$in: film_id}},
+                {"$pull": {"films": film_id, "comments": {"$in": film.comments}}}).session(session);
         }
 
-    });
+        await film.remove();
 
-    await ThumbnailGridFs.unlink({_id: film.thumbnail.poster}, (err, doc) => {
-        if (err || doc === null) {
-            return notFound(res)(doc);
-        }
-    });
+        await Comment.deleteMany({_id: {$in: film.comments}}).session(session);
 
-   await ThumbnailGridFs.unlink({_id: film.thumbnail.preview}, (err, doc) => {
-        if (err || doc === null) {}
-    });
+        await unlinkGridFs(film_id, film.thumbnail.id, film.thumbnail.small, film.thumbnail.poster, film.thumbnail.preview)
 
+        await session.commitTransaction()
+        session.endSession()
 
-    let userPromise = null;
+        return res.status(200).end()
 
-    if (user.films.indexOf(film_id) > -1) {
-        userPromise = User.findOneAndUpdate({_id: user.id},
-            {"$pull": {"films": film_id, "comments": {"$in": film.comments}}}).exec();
-    } else if (user.role === 'admin') {
-        userPromise = User.findOneAndUpdate({"films": {$in: film_id}},
-            {"$pull": {"films": film_id, "comments": {"$in": film.comments}}}).exec();
-    }
+    }).catch(() => {
+        return res.status(500).message({error: 'Something went wrong!'})
+    })
 
-    if (userPromise === null) {
-        return notFound(res)(null);
-    }
-
-
-    const filmPromise = film.remove();
-
-    const commentPromise = Comment.deleteMany({_id: {$in: film.comments}}).exec();
-
-    {
-        await Promise.all([
-            filmPromise,
-            userPromise,
-            commentPromise
-        ]);
-
-        try {
-            success(res, 200)("Film removed successfully!")
-        } catch (e) {
-            res.status(400).end()
-        }
-    }
 
 };
 
 
-const showAllSortByCreationDate = ({params}, res, next) =>
-    Film.find({}, null, {sort: {createdAt: params.dir}})
-        .then((film) => film.map((film) => film.view()))
-        .then(success(res))
-        .catch(next);
-
-
-const showAllSortByViews = ({params}, res, next) =>
-    Film.find({}, null, {sort: {"meta.views": params.dir}})
-        .then((film) => film.map((film) => film.view()))
-        .then(success(res))
-        .catch(next);
-
-const showAllSortByLikes = ({params}, res, next) =>
-    Film.find({}, null, {sort: {"meta.likes": params.dir}})
-        .then((film) => film.map((film) => film.view()))
-        .then(success(res))
-        .catch(next);
-
-
-const filterByTitle = ({params, query}, res, next) => {
+const search = ({params, query}, res, next) => {
 
     let sort = {};
 
-    let projection = {
-        title: 'title', meta: 'meta', '_id': '_id', thumbnail: 'thumbnail', author: 'author',
-        description: 'description', createdAt: 'createdAt'
-    };
+    let projection = '_id title meta thumbnail author authorName description createdAt'
 
     if (query.p)
         projection = '_id';
@@ -679,111 +540,31 @@ const filterByTitle = ({params, query}, res, next) => {
         Film.find({title: new RegExp(query.search)}, projection, sort)
             .where('createdAt').gte(destDate).lte(currentDate)
             .skip(parseInt(query.start)).limit(parseInt(query.limit))
-            .then((films) => {
-                if (!query.p) {
-
-                    const requests = [];
-
-                    films.map((film) => {
-                        requests.push(
-                            User.findById(film.author, 'nick')
-                                .then(author => {
-                                    film.set('author_name', author.nick, {strict: false});
-                                    return film;
-                                }).catch(next))
-                    });
-
-                    Promise.all(requests).then((films) => {
-                        return films;
-                    })
-                        .then((films) => films.map((film) => {
-
-                            return {
-                                author: film.author,
-                                title: film.title,
-                                description: film.description,
-                                views: film.meta.views,
-                                thumbsUp: film.meta.likes,
-                                thumbsDown: film.meta.dislikes,
-                                thumbnail: film.thumbnail,
-                                id: film._id,
-                                createdAt: film.createdAt,
-                                author_name: film.get('author_name')
-                            };
-                        }))
-                        .then(success(res));
-
-                } else {
-                    return films;
-                }
-
-            })
+            .then(film => film.map(film => film.view(true)))
             .then(success(res))
             .catch(next);
 
-        return;
+    } else {
+
+        Film.find({title: new RegExp(query.search)}, projection, sort)
+            .skip(parseInt(query.start)).limit(parseInt(query.limit))
+            .then(films => films.map(film => film.view(true)))
+            .then(success(res))
+            .catch(next);
     }
-
-
-    Film.find({title: new RegExp(query.search)}, projection, sort)
-        .skip(parseInt(query.start)).limit(parseInt(query.limit))
-        .then((films) => {
-            if (!query.p) {
-
-                const requests = [];
-
-                films.map((film) => {
-                    requests.push(
-                        User.findById(film.author, 'nick')
-                            .then(author => {
-                                film.set('author_name', author.nick, {strict: false});
-                                return film;
-                            }).catch(next))
-                });
-
-                Promise.all(requests).then((films) => {
-                    return films;
-                })
-                    .then((films) => films.map((film) => {
-
-                        return {
-                            author: film.author,
-                            title: film.title,
-                            description: film.description,
-                            views: film.meta.views,
-                            thumbsUp: film.meta.likes,
-                            thumbsDown: film.meta.dislikes,
-                            thumbnail: film.thumbnail,
-                            id: film._id,
-                            createdAt: film.createdAt,
-                            author_name: film.get('author_name')
-                        };
-                    }))
-                    .then(success(res));
-
-            } else {
-                return films;
-            }
-
-        })
-        .then(success(res))
-        .catch(next);
 };
 
 
 module.exports = {
     create,
     index,
-    showFilm,
-    showOneFilmDescriptionWithoutComments,
-    showOneFilmDescriptionAndComments,
+    getAll,
+    getAllOnlyTitle,
+    getVideo,
     showThumbnail,
     update,
+    partialUpdate,
     destroy,
-    showAllSortByCreationDate,
-    showAllSortByViews,
-    showAllSortByLikes,
-    filterByTitle,
+    search,
     updateMeta,
-    indexOnlyTitle
 };

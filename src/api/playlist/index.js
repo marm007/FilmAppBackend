@@ -1,7 +1,7 @@
 const {Router} = require('express');
 const {
-    create, index, show, updateTitle, insertFilms, destroy, showAllSortByCreationDate, showAllSortByTitle, showAllSortByFilmsSize,
-    filterByTitle, filterByTitleStartsWith, filterByDateBetween, deleteFilms, showAll
+    create, index, showAll, showAllAndFilterEmpty, updateTitle, insertFilms, destroy, showAllSortByCreationDate, showAllSortByTitle, showAllSortByFilmsSize,
+    filterByTitle, filterByTitleStartsWith, filterByDateBetween, deleteFilms
 } = require('./controller');
 const {token} = require('../../services/passport');
 const router = new Router();
@@ -16,21 +16,19 @@ router.post('/',
     token({required: true}),
     create);
 
-
-router.get('/',
+router.get('/:id',
     index);
 
-router.get('/all',
+router.get('/',
     showAll);
 
-router.get('/:id',
-    show);
+router.get('/all',
+    showAllAndFilterEmpty);
 
 router.put('/:id',
-    token({required: true}),
     updateTitle);
 
-router.put('/:id/films', token({required: true}),
+router.put('/:id/films',
     insertFilms);
 
 router.put('/:id/films/delete', token({required: true}),

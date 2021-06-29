@@ -4,17 +4,17 @@ const {Schema} = require("mongoose");
 
 const commentSchema = new Schema({
 
-        film_id: {
+        filmId: {
             type: Schema.ObjectId,
             ref: "Film",
             required: true
         },
-        author_id: {
+        authorId: {
             type: Schema.ObjectId,
             ref: "User",
             required: true
         },
-        author_nick: {
+        authorName: {
             type: "String"
         },
         text: {
@@ -31,15 +31,16 @@ commentSchema.methods = {
     view(full) {
         const view = {
             id: this._id,
-            author_id: this.author_id,
+            authorId: this.authorId,
+            authorName: this.authorName,
             text: this.text,
-            createdAt: this.createdAt
+            createdAt: this.createdAt,
+            updatedAt: this.updatedAt
         };
 
         return full ? {
             ...view,
-            film_id: this.film_id,
-            updatedAt: this.updatedAt
+            filmId: this.filmId,
         } : view;
     }
 };

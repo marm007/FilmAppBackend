@@ -13,6 +13,10 @@ const filmSchema = new Schema({
         type: Schema.ObjectId,
         ref: 'User'
     },
+    authorName: {
+      type: String,
+      required: true
+    },
     description: {
         type: String,
         required: true
@@ -32,6 +36,10 @@ const filmSchema = new Schema({
             default: 0
         }
     },
+    commentsCount: {
+        type: Number,
+        default: 0
+    },
     comments: [Comment]
 
 }, {
@@ -39,23 +47,33 @@ const filmSchema = new Schema({
 });
 
 
+filmSchema.pre('validate', function (next) {
+    this.commentsCount = this.comments.length
+    next()
+})
+
+
 filmSchema.methods = {
-    view(full) {
-        const view = {
-            author: this.author,
+    view(full, withComments = false) {
+        let view = {
             title: this.title,
+            author: this.author,
+            authorName: this.authorName,
             description: this.description,
-            comments: this.comments,
             views: this.meta.views,
             thumbsUp: this.meta.likes,
             thumbsDown: this.meta.dislikes,
-            thumbnail: this.thumbnail
+            thumbnail: this.thumbnail,
+            commentsCount: this.commentsCount
 
         };
 
+        if (withComments)
+            view =  {...view, comments: this.comments}
+
         return full ? {
-            ...view,
             id: this._id,
+            ...view,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         } : view;

@@ -1,35 +1,32 @@
 const {Router} = require('express');
-const {token, password} = require('../../services/passport');
-const {index, showMe, show, create, update, destroy, auth, forgot, reset, updateMeta, showMyPlaylists, showMyFilms} = require("./controller");
+const {token} = require('../../services/passport');
+const {all, me, index, create, update, destroy, updateMeta, listMinePlaylists, listMineFilms} = require("./controller");
 
 const router = new Router();
 
 router.get('/',
     token({required: true, roles: ['admin']}),
-    index);
+    all);
 
 router.get('/me',
     token({required: true}),
-    showMe);
+    me);
 
 router.get('/me/playlists',
     token({required: true}),
-    showMyPlaylists);
+    listMinePlaylists);
 
 router.get('/me/films',
     token({required: true}),
-    showMyFilms);
+    listMineFilms);
 
 router.get('/:id',
     //token({required: true, roles: ['admin']}),
-    show);
+    index);
 
 router.post('/',
     create);
 
-router.post('/auth',
-    password(),
-    auth);
 
 router.put('/',
     token({required: true}),
@@ -44,8 +41,5 @@ router.delete('/:id',
     destroy);
 
 
-router.post('/password/forgot', forgot);
-
-router.post('/password/reset/:token', reset);
 
 module.exports = router;

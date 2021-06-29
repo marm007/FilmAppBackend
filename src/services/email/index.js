@@ -23,7 +23,7 @@ const devTransport = nodemailer.createTransport({
 });
 
 
-const transport = config.env === 'production' ? gmailTransport : gmailTransport; // TODO cange for not production for devTransport
+const transport = config.env === 'production' ? gmailTransport : devTransport;
 
 
 const sendmail = (to, subject, content, err) => {

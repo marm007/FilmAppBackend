@@ -18,7 +18,14 @@ const notFound = (res) => (entity) => {
     return null;
 };
 
+const noCommentsFound = (res) => (entity) => {
+    if (entity.length > 0) {
+        return entity;
+    }
+    res.status(200).send({}).end();
+    return null;
+};
 
 module.exports = {
-    success, notFound
+    success, notFound, noCommentsFound
 };

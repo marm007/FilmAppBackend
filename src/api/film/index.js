@@ -1,14 +1,21 @@
 const {Router} = require('express');
 const {
-    create, index, showFilm, showOneFilmDescriptionWithoutComments, showOneFilmDescriptionAndComments,
-    showThumbnail, update, destroy, showAllSortByViews, showAllSortByLikes, filterByTitle, showAllSortByCreationDate, updateMeta,
-    indexOnlyTitle
+    create,
+    index,
+    getAll,
+    getAllOnlyTitle,
+    getVideo,
+    showThumbnail,
+    update,
+    partialUpdate,
+    updateMeta,
+    destroy,
+    search
 }
     = require('./controller');
 
 const {
-    createComment, destroyComment, updateComment, showAllCommentsSortByCreationDate,
-    showAllSortByAuthorName, showAllSortByText, filterByAuthorName, filterByDateBetween, filterByTextContains
+    createComment, indexComment, getAllComments, destroyComment, updateComment, sortComments, filterComments
 } = require('../comment/controller');
 
 const {token} = require('../../services/passport');
@@ -19,81 +26,61 @@ router.post('/',
     create);
 
 router.get('/',
-    index);
+    getAll);
 
 router.get('/titles',
-    indexOnlyTitle);
+    getAllOnlyTitle);
+
+router.get('/search',
+    search);
 
 router.get('/:id',
-    showFilm);
+    index);
 
-router.get('/:id/desc/no',
-    showOneFilmDescriptionWithoutComments);
+router.get('/:id/video',
+    getVideo);
 
-router.get('/:id/desc',
-    showOneFilmDescriptionAndComments);
+router.get('/:film_id/thumbnail',
+    showThumbnail);
 
 router.put('/:id',
     token({required: true}),
     update);
 
-router.delete('/:film_id',
+router.patch('/:id',
     token({required: true}),
-    destroy);
-
+    partialUpdate);
 
 router.put('/:id/meta',
     updateMeta);
 
-router.get('/:film_id/thumbnail/:id',
-    showThumbnail);
-
+router.delete('/:film_id',
+    token({required: true}),
+    destroy);
 
 router.post('/:film_id/comments',
     token({required: true}),
     createComment);
 
-router.put('/:film_id/comments/update/:commentId',
+router.get('/:film_id/comments/:commentId',
+    indexComment);
+
+router.get('/:film_id/comments',
+    getAllComments);
+
+router.get('/:film_id/comments/sort',
+    sortComments);
+
+router.get('/:film_id/comments/filter',
+    filterComments);
+
+router.put('/:film_id/comments/:commentId',
     token({required: true}),
     updateComment);
 
 router.delete('/:film_id/comments/:commentId',
     token({required: true}),
     destroyComment);
-
-
-router.get('/:film_id/comments/sort/author/:dir',
-    showAllSortByAuthorName);
-
-router.get('/:film_id/comments/sort/text/:dir',
-    showAllSortByText);
-
-router.get('/:film_id/comments/sort/date/:dir',
-    showAllCommentsSortByCreationDate);
-
-
-router.get('/:film_id/comments/filter/author/:name',
-    filterByAuthorName);
-
-router.get('/:film_id/comments/filter/date/',
-    filterByDateBetween);
-
-router.get('/:film_id/comments/filter/text/:text',
-    filterByTextContains);
-
-
-router.get('/sort/views/:dir',
-    showAllSortByViews);
-
-router.get('/sort/likes/:dir',
-    showAllSortByLikes);
-
-router.get('/sort/date/:dir',
-    showAllSortByCreationDate);
-
-
-router.get('/filter/title',
-    filterByTitle);
 
 
 module.exports = router;

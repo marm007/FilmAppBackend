@@ -11,7 +11,7 @@ const Film = require('../film/model').model;
 const create = async ({user, body}, res, next) => {
 
     let films = body.films;
-    body.films = await [...new Set(films)];
+    body.films = [...new Set(films)];
     body.author = user.id;
 
     let playlist = await Playlist.create(body)
@@ -29,13 +29,31 @@ const create = async ({user, body}, res, next) => {
     }
 };
 
-const index = (req, res, next) =>
+const index = ({params}, res, next) =>
+    Playlist.findById(params.id)
+        .then(notFound(res))
+        .then(async playlist => {
+            let userName = await User.findById(playlist.author, 'nick')
+                .then(author => {
+                    return author && author.nick ? author.nick : 'user deleted';
+                });
+
+            playlist = playlist ? playlist.view(true) : null;
+            {
+                playlist.author_name = userName;
+                return playlist;
+            }
+        })
+        .then(success(res))
+        .catch(next);
+
+const showAll = (req, res, next) =>
     Playlist.find()
         .then((playlist) => playlist.map((playlist) => playlist.view(true)))
         .then(success(res))
         .catch(next);
 
-const showAll = async (req, res, next) => {
+const showAllAndFilterEmpty = async (req, res, next) => {
 
     const {query} = req;
 
@@ -101,25 +119,6 @@ const showAll = async (req, res, next) => {
 };
 
 
-const show = ({params}, res, next) =>
-    Playlist.findById(params.id)
-        .then(notFound(res))
-        .then(async playlist => {
-            let userName = await User.findById(playlist.author, 'nick')
-                .then(author => {
-                    return author && author.nick ? author.nick : 'user deleted';
-                });
-
-            playlist = playlist ? playlist.view(true) : null;
-            {
-                playlist.author_name = userName;
-                return playlist;
-            }
-        })
-        .then(success(res))
-        .catch(next);
-
-
 const updateTitle = ({user, body, params}, res, next) => {
 
     if (body.title === undefined || body.title === null)
@@ -134,7 +133,6 @@ const updateTitle = ({user, body, params}, res, next) => {
                 "Path title must be of type String!"
         }).end();
 
-    if (user.role === 'admin' || (user.playlists.indexOf(params.id) > -1)) {
 
         Playlist.findById(params.id)
             .then(notFound(res))
@@ -143,9 +141,7 @@ const updateTitle = ({user, body, params}, res, next) => {
             .then(success(res))
             .catch(next);
 
-    } else {
-        return res.status(403).end()
-    }
+
 
 };
 
@@ -323,7 +319,8 @@ const filterByDateBetween = ({params}, res, next) =>
 module.exports = {
     create,
     index,
-    show,
+    showAll,
+    showAllAndFilterEmpty,
     updateTitle,
     insertFilms,
     destroy,
@@ -334,5 +331,4 @@ module.exports = {
     filterByTitleStartsWith,
     filterByDateBetween,
     deleteFilms,
-    showAll
 };

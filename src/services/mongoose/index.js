@@ -6,7 +6,6 @@ for (const key in mongo.options) {
     mongoose.set(key, mongo.options[key]);
 }
 
-
 mongoose.connection.on('connected', function (res, db) {
     console.log('MongoDB connected successfully')
 });
