@@ -40,16 +40,8 @@ const userSchema = new Schema({
                 ref: "Film"
             }
         ]
-    }
-    ,
-    films: [{type: Schema.ObjectId, ref: "Film"}]
-    ,
-    playlists: [{type: Schema.ObjectId, ref: "Playlist"}]
-    ,
-    comments: [{type: Schema.ObjectId, ref: "Comment"}],
-
+    },
     resetPasswordToken: String,
-
     resetPasswordExpires: Date
 
 }, {

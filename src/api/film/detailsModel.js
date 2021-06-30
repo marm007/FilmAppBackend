@@ -15,16 +15,6 @@ const detailsSchema = new Schema({
         ref: 'User',
         required: true
     },
-    meta: {
-        likes: {
-            type: Number,
-            default: 0
-        },
-        dislikes: {
-            type: Number,
-            default: 0
-        }
-    },
     comments_count: {
         type: Number,
         default: 0
@@ -39,8 +29,6 @@ detailsSchema.methods = {
     view(full) {
         let view = {
             author_id: this.author_id,
-            likes: this.meta.likes,
-            dislikes: this.meta.dislikes,
             comments_count: this.comments_count,
             comments: this.comments
         }

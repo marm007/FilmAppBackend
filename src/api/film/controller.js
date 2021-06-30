@@ -143,7 +143,7 @@ const create = async (req, res, next) => {
                     return res.status(400).send({error: message})
                 }
 
-               
+
                 const session = await mongoose.startSession();
 
                 await session.withTransaction(async function executor() {
@@ -154,21 +154,21 @@ const create = async (req, res, next) => {
                         title: req.body.title,
                         thumbnail: thumbnailBody
                     };
-    
+
                     const filmDetailBody = {
                         film_id: req.files.film[0].id,
                         author_id: req.user._id,
                     }
-    
+
 
                     let film = await Film.create([filmBody], {session: session})
                         .then((film) => film[0].view(true));
-                    
+
                     let details = await FilmDetail.create([filmDetailBody], {session: session})
                         .then(details => details[0].view(false))
 
                     let user = await User.findById(req.user._id, '_id name films').session(session);
-                    
+
                     user.films.push(film.id);
                     await user.save();
 
@@ -542,7 +542,6 @@ module.exports = {
     create,
     index,
     getAll,
-    getAllOnlyTitle,
     getVideo,
     showThumbnail,
     update,

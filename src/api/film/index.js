@@ -3,7 +3,6 @@ const {
     create,
     index,
     getAll,
-    getAllOnlyTitle,
     getVideo,
     showThumbnail,
     update,
@@ -27,9 +26,6 @@ router.post('/',
 
 router.get('/',
     getAll);
-
-router.get('/titles',
-    getAllOnlyTitle);
 
 router.get('/search',
     search);

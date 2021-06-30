@@ -29,6 +29,7 @@ router.use(function (err, req, res, next) {
 
         return res.status(404).send({errors});
     }
+    console.log("zxczxczx")
 
     res.status(500).send({errors: ['Application error']});
 });

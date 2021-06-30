@@ -21,6 +21,14 @@ const filmSchema = new Schema({
         views: {
             type: Number,
             default: 0
+        },
+        likes: {
+            type: Number,
+            default: 0
+        },
+        dislikes: {
+            type: Number,
+            default: 0
         }
     }
 }, {
@@ -35,8 +43,9 @@ filmSchema.methods = {
             author_name: this.author_name,
             description: this.description,
             views: this.meta.views,
+            likes: this.meta.likes,
+            dislikes: this.meta.dislikes,
             thumbnail: this.thumbnail,
-
         };
 
         return full ? {
