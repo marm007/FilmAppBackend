@@ -18,7 +18,7 @@ const userSchema = new Schema({
         required: true,
         minlength: 6
     },
-    nick: {
+    name: {
         type: String,
         trim: true,
         required: true
@@ -73,7 +73,7 @@ userSchema.pre('save', function (next) {
 userSchema.methods = {
     view(full) {
         let view = {};
-        let fields = ['id', 'nick', 'films', 'playlists', 'comments', 'meta', 'meta'];
+        let fields = ['id', 'name', 'films', 'playlists', 'comments', 'meta', 'meta'];
 
         if (full) {
             fields = [...fields, 'role', 'email'];

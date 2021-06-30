@@ -1,4 +1,3 @@
-const {createModel} = require("mongoose-gridfs");
 const mongoose = require('mongoose');
 const async = require('async');
 
@@ -7,24 +6,24 @@ const _ = require("lodash");
 const {success, notFound} = require('../../services/response/');
 
 const Film = require('./model').model;
+const FilmDetail = require('./detailsModel').model;
+
 const User = require('../user/model').model;
 const Comment = require('../comment/model').model;
 
 const handleGridFsUpload = require('./upload-db');
 
-const fileType = require('file-type');
-const mime = require('mime-types');
 const ObjectId = require('mongoose').Types.ObjectId;
 
 const sharp = require('sharp');
 
-const unlinkGridFs = async (filmId, ...thumbnailIds) => {
+const unlinkGridFs = async (film_id, ...thumbnailIds) => {
 
     const FilmGridFs = require('./gridfs');
     const ThumbnailGridFs = require('../thumbnail/gridfs');
 
     console.log(thumbnailIds)
-    if (filmId) await FilmGridFs.unlink({_id: filmId}, (err, doc) => {
+    if (film_id) await FilmGridFs.unlink({_id: film_id}, (err, doc) => {
     });
 
     for (let id of thumbnailIds) {
@@ -144,29 +143,40 @@ const create = async (req, res, next) => {
                     return res.status(400).send({error: message})
                 }
 
-                const filmBody = {
-                    _id: req.files.film[0].id,
-                    author: user.id,
-                    authorName: user.nick,
-                    description: req.body.description,
-                    title: req.body.title
-                };
-
+               
                 const session = await mongoose.startSession();
 
                 await session.withTransaction(async function executor() {
-                    filmBody.thumbnail = thumbnailBody;
+                    const filmBody = {
+                        _id: req.files.film[0].id,
+                        author_name: req.user.name,
+                        description: req.body.description,
+                        title: req.body.title,
+                        thumbnail: thumbnailBody
+                    };
+    
+                    const filmDetailBody = {
+                        film_id: req.files.film[0].id,
+                        author_id: req.user._id,
+                    }
+    
 
                     let film = await Film.create([filmBody], {session: session})
                         .then((film) => film[0].view(true));
-                    let user = await User.findById(req.user._id, '_id nick films').session(session);
+                    
+                    let details = await FilmDetail.create([filmDetailBody], {session: session})
+                        .then(details => details[0].view(false))
+
+                    let user = await User.findById(req.user._id, '_id name films').session(session);
+                    
                     user.films.push(film.id);
                     await user.save();
 
                     await session.commitTransaction();
                     session.endSession();
-                    return success(res, 201)(film);
+                    return success(res, 201)({...film, ...details});
                 }).catch(async (err) => {
+                    console.error(err)
                     await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
                     return res.status(400).send({error: 'Something went wrong!'})
                 })
@@ -176,34 +186,21 @@ const create = async (req, res, next) => {
 
 };
 
-const index = (req, res, next) => {
+const index = async (req, res, next) => {
 
     if (!ObjectId.isValid(req.params.id)) return res.status(400).end();
 
-    let {comments} = req.query;
 
-    if (comments) {
+    let film = await Film.findOne({_id: req.params.id})
 
-        Film.findOne({_id: req.params.id},
-            {'comments': {$slice: [parseInt(req.query.start), parseInt(req.query.limit)]}})
-            .populate('comments')
-            .then(notFound(res))
-            .then(film => film.view(true, true))
-            .then(success(res))
-            .catch(next => {
-                return res.status(400).json({
-                    errors: next.errmsg
-                })
-            });
+    if(!film) return res.status(404).send({error: `Film cannot be found!`})
 
-    } else {
+    let filmDetails = await FilmDetail.findOne({film_id: film.id})
 
-        Film.findById(req.params.id)
-            .then(notFound(res))
-            .then(film => film.view(true))
-            .then(success(res))
-            .catch(next);
-    }
+    if(!filmDetails) return res.status(404)
+        .send({error: `FilmDetails cannot be found!`})
+
+    return res.status(200).send({...film.view(true), ...filmDetails.view()})
 };
 
 const showThumbnail = async ({params, query}, res, next) => {
@@ -338,33 +335,19 @@ const getVideo = (req, res, next) => {
 
 const getAll = ({query}, res, next) => {
 
-    let exclude = {};
+    let find = {};
 
     if (query.exclude && !ObjectId.isValid(query.exclude)) return res.status(400).end();
 
-    if (query.exclude) exclude = {_id: {$nin: [query.exclude]}};
+    if (query.exclude) find = {_id: {$nin: [query.exclude]}};
 
-    Film.find(exclude)
+    if(query.search) find = {...find, title: new RegExp(query.search)}
+
+    Film.find(find)
         .skip(parseInt(query.start)).limit(parseInt(query.limit))
         .then(film => film.map(film => film.view(true)))
         .then(success(res))
         .catch(next);
-};
-
-const getAllOnlyTitle = ({query}, res, next) => {
-
-    let projection = {
-        title: 'title'
-    };
-
-    Film.find({title: new RegExp(query.search)}, projection)
-        .skip(parseInt(query.start)).limit(parseInt(query.limit))
-        .then(films => films.map(film => {
-            return {id: film._id, title: film.title}
-        }))
-        .then(success(res))
-        .catch(next);
-
 };
 
 const update = function ({user, body, params}, res, next) {
@@ -483,7 +466,7 @@ const search = ({params, query}, res, next) => {
 
     let sort = {};
 
-    let projection = '_id title meta thumbnail author authorName description createdAt'
+    let projection = '_id title meta thumbnail author author_name description createdAt'
 
     if (query.p)
         projection = '_id';

@@ -15,7 +15,7 @@ const {
     = require('./controller');
 
 const {
-    createComment, indexComment, getAllComments, destroyComment, updateComment, sortComments, filterComments
+    createComment, getAllComments, sortComments, filterComments
 } = require('../comment/controller');
 
 const {token} = require('../../services/passport');
@@ -62,9 +62,6 @@ router.post('/:film_id/comments',
     token({required: true}),
     createComment);
 
-router.get('/:film_id/comments/:commentId',
-    indexComment);
-
 router.get('/:film_id/comments',
     getAllComments);
 
@@ -73,14 +70,6 @@ router.get('/:film_id/comments/sort',
 
 router.get('/:film_id/comments/filter',
     filterComments);
-
-router.put('/:film_id/comments/:commentId',
-    token({required: true}),
-    updateComment);
-
-router.delete('/:film_id/comments/:commentId',
-    token({required: true}),
-    destroyComment);
 
 
 module.exports = router;

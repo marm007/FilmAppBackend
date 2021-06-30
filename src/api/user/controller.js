@@ -49,7 +49,7 @@ const listMinePlaylists =  ({user}, res, next) => {
                         id: playlist,
                         title: res.title,
                         films: resultFilms,
-                        filmID: (res.films[0] !== null && res.films.length !== 0) ? res.films[0]._id : null,
+                        film_id: (res.films[0] !== null && res.films.length !== 0) ? res.films[0]._id : null,
                         thumbnail: (res.films[0] !== null && res.films.length !== 0) ? res.films[0].thumbnail._id : null,
                         createdAt: res.createdAt
                     }

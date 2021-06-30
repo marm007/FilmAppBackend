@@ -8,6 +8,7 @@ const router = new Router();
 router.post('/',
     password(),
     auth);
+    
 router.post('/password/forgot', forgot);
 
 router.post('/password/reset/:token', reset);

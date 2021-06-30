@@ -3,19 +3,18 @@ const mongoose = require("mongoose");
 const {Schema} = require("mongoose");
 
 const commentSchema = new Schema({
-
-        filmId: {
+        film_id: {
             type: Schema.ObjectId,
-            ref: "Film",
-            required: true
+            ref: "Film"
         },
-        authorId: {
+        author_id: {
             type: Schema.ObjectId,
             ref: "User",
             required: true
         },
-        authorName: {
-            type: "String"
+        author_name: {
+            type: "String",
+            required: true
         },
         text: {
             type: String,
@@ -31,8 +30,8 @@ commentSchema.methods = {
     view(full) {
         const view = {
             id: this._id,
-            authorId: this.authorId,
-            authorName: this.authorName,
+            author_id: this.author_id,
+            author_name: this.author_name,
             text: this.text,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
@@ -40,7 +39,7 @@ commentSchema.methods = {
 
         return full ? {
             ...view,
-            filmId: this.filmId,
+            film_id: this.film_id,
         } : view;
     }
 };

@@ -13,7 +13,7 @@ const Comment = require('./model').model;
 const createComment = async (req, res, next) => {
     const session = await mongoose.startSession()
     await session.withTransaction(async function executor() {
-
+        const user = req.user
         const {film_id} = req.params;
         const {text} = req.body;
 
@@ -22,36 +22,34 @@ const createComment = async (req, res, next) => {
                 errors: ['path text is required']
             });
 
-        let user = await User.findById(req.user._id, '_id nick comments').session(session)
         let film = await FilmModel.findById(film_id).session(session);
 
         if (film === null)
             return notFound(res)(film);
 
-        if(user === null)
-            return notFound(res)(user)
-
-        const commentId = ObjectId();
-        const comment = {
-            "_id": commentId,
-            "filmId": film_id,
-            "authorId": user._id,
-            "authorName": user.nick,
+        let commentBody = {
+            "film_id": film_id,
+            "author_id": user._id,
+            "author_name": user.name,
             "text": text
         };
 
-        user.comments.unshift(commentId);
-        film.comments.unshift(comment);
+        let comment = await Comment.create([commentBody], {session: session}).then(comments => comments[0].view(true))
+        
+        commentBody = { ...commentBody, _id: comment.id, createdAt: comment.createdAt, updatedAt: comment.updatedAt }
+        delete commentBody.film_id
+        
+        film.comments.unshift(commentBody);
 
-        await user.save();
+        if(film.comments.length > 10) film.comments.pop()
+
         await film.save();
 
         await session.commitTransaction();
         session.endSession();
 
         return success(res)({
-            ...comment,
-            "createdAt": commentId.getTimestamp()
+            ...comment
         })
     }).catch((err) => {
         console.log(err)
@@ -60,99 +58,110 @@ const createComment = async (req, res, next) => {
 
 };
 
+const index = async (req, res, next) => {
 
-const indexComment = async (req, res, next) => {
-    const {film_id, commentId} = req.params;
 
-    let film = await FilmModel.findOne({_id: film_id, comments: {$elemMatch: {_id: commentId}}});
+    const {comment_id} = req.params;
 
-    if (film === null || film.comments.length === 0)
-        return notFound(res)(null);
+    if (!ObjectId.isValid(comment_id)) return res.status(400).end();
 
-    let comment = film.comments.filter(comment => {
-        console.log(comment._id)
-        console.log(commentId)
-        console.log(typeof comment._id.toString())
-        console.log(typeof commentId)
-        console.log(comment._id == commentId)
-        return comment._id === ObjectId(commentId)
-    })
-
-    return res.status(200).send(comment)
+    Comment.findOne({_id: comment_id})
+        .then(notFound(res))
+        .then(comment => comment.view(true))
+        .then(success(res))
+        .catch(next)
 };
 
 const getAllComments = async (req, res, next) => {
 
-    FilmModel.findById({_id: req.params.film_id})
-        .populate('comments')
+    Comment.find({film_id: req.params.film_id})
         .then(notFound(res))
-        .then((film) => film ? film.comments.map((comment) => comment.view(false)) : null)
+        .then(comments => comments ? comments.map((comment) => comment.view(false)) : null)
         .then(success(res))
         .catch(next);
 };
 
-const updateComment = async (req, res, next) => {
-    const {film_id, commentId} = req.params;
+const update = async (req, res, next) => {
+
     const user = req.user;
 
-    let film = await FilmModel.findOne({_id: film_id, comments: {$elemMatch: {_id: commentId}}});
+    const {comment_id} = req.params;
+    const {text} = req.body
 
-    if (film === null || film.comments.length === 0)
-        return notFound(res)(null);
+    const session = await mongoose.startSession()
 
-    if (user.role === 'admin' || (user.comments.indexOf(commentId) > -1)) {
+    await session.withTransaction(async function executor() {
 
-        if (req.body.text === null || req.body.text === undefined)
-            return res.status(400).send({error: 'Path text is required'}).end();
+        let comment = await Comment.findOne({_id: comment_id}).session(session);
 
-        if (!(typeof req.body.text === 'string' || req.body.text instanceof String))
-            return res.status(400).send({error: 'Path text must be of type String'}).end();
+        if (!comment) return notFound(res)(null);
 
-        FilmModel.findOneAndUpdate({comments: {$elemMatch: {_id: commentId}}}, {$set: {"comments.$.text": (req.body.text)}},
-            {
-                "projection": {
-                    "comments": {
-                        "$elemMatch": {"_id": commentId}
-                    }
-                },
-                "new": true
-            })
-            .populate("comments")
-            .then((film) => film ? film.comments.map((comment) => comment.view(true)) : null)
-            .then(success(res))
-            .catch(next);
+        if (!(user.role === 'admin' || user._id.equals(comment.author_id))) return res.status(403).end()
 
-    } else {
-        return res.status(403).end()
-    }
+        if (text === null || text === undefined) return res.status(400).send({error: 'Path text is required'})
+    
+        if (!(typeof text === 'string' || text instanceof String))
+            return res.status(400).send({error: 'Path text must be of type String'})
+    
+        let film = await FilmModel.findOne({ _id: comment.film_id }).session(session)
+
+        let filmComment = film.comments.find(c => c._id.equals(comment._id))
+
+        comment.text = text
+
+        if(filmComment) filmComment.text = text
+
+        await film.save()
+        await comment.save()
+        
+        await session.commitTransaction()
+        session.endSession()
+
+        return res.status(200).send(comment.view(false))
+    }).catch((err) => {
+        console.error(err)
+        return res.status(500).send({error: 'Something went wrong!'})
+    })
 
 };
 
-const destroyComment = async (req, res, next) => {
+const destroy = async (req, res, next) => {
     const session = await mongoose.startSession();
     await session.withTransaction(async function executor() {
-        const {film_id, commentId} = req.params;
+        const {comment_id} = req.params;
+        const user = req.user
 
-        let film = await FilmModel.findOne({_id: film_id}, {comments: {$elemMatch: {_id: commentId}}});
+        let comment = await Comment.findOne({_id: comment_id}).session(session);
 
-        if (film === null || film.comments.length === 0)
-            return notFound(res)(null);
+        if (!comment) return notFound(res)(null);
 
-        const userId = film.comments[0].authorId;
+        if (!(user.role === 'admin' || user._id.equals(comment.author_id))) return res.status(401).end()
 
-        if (!((req.user.role === 'admin') || (req.user._id.equals(userId))))
-            return res.status(401).end();
+        let film = await FilmModel.findOne({_id: comment.film_id}).session(session)
+        
+        let commentToInsert = await Comment.find({film_id: comment.film_id,
+                 createdAt: {$lt: film.comments[film.comments.length - 1].createdAt}})
+            .sort({createdAt: -1})
+            .limit(1).session(session)
+        
+        let filmComment = film.comments.find(c => c._id.equals(comment._id))
 
+        if(film.comments.length === 10 && commentToInsert.length > 0) {
+            let commentBody = {
+                "_id": commentToInsert[0]._id,
+                "author_id": commentToInsert[0].author_id,
+                "author_name": commentToInsert[0].author_name,
+                "text": commentToInsert[0].text,
+                "createdAt": commentToInsert[0].createdAt,
+                "updatedAt": commentToInsert[0].updatedAt
+            }
+            await film.comments.push(commentBody)
+        }
 
-        let newFilm = await FilmModel.findById(film_id)
-            .session(session);
+        if(filmComment) await film.comments.pull(filmComment)
 
-        await newFilm.comments.pull(commentId)
-        await newFilm.save()
-
-        await User.findOneAndUpdate({_id: userId}, {$pull: {comments: commentId}}, {new: true})
-            .session(session);
-
+        await comment.remove()
+        await film.save()
 
         await session.commitTransaction();
         session.endSession();
@@ -190,9 +199,9 @@ const sortComments = async ({params, query}, res, next) => {
         sort = {...sort, "comments.text": value}
     }
 
-    if (query.authorName) {
-        const value = query.authorName == 1 ? 1 : -1;
-        sort = {...sort, "comments.authorName": value}
+    if (query.author_name) {
+        const value = query.author_name == 1 ? 1 : -1;
+        sort = {...sort, "comments.author_name": value}
     }
 
 
@@ -280,8 +289,8 @@ const filterComments = async ({query, params}, res, next) => {
         match = {...match, "comments.text": new RegExp(query.text)}
     }
 
-    if (query.authorName) {
-        match = {...match, "authorName": query.authorName}
+    if (query.author_name) {
+        match = {...match, "author_name": query.author_name}
     }
 
     FilmModel.aggregate([
@@ -320,10 +329,10 @@ const filterComments = async ({query, params}, res, next) => {
 
 module.exports = {
     createComment,
-    indexComment,
+    index,
     getAllComments,
-    updateComment,
-    destroyComment,
+    update,
+    destroy,
     sortComments,
     filterComments
 };

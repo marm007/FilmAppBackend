@@ -33,9 +33,9 @@ const index = ({params}, res, next) =>
     Playlist.findById(params.id)
         .then(notFound(res))
         .then(async playlist => {
-            let userName = await User.findById(playlist.author, 'nick')
+            let userName = await User.findById(playlist.author, 'name')
                 .then(author => {
-                    return author && author.nick ? author.nick : 'user deleted';
+                    return author && author.name ? author.name : 'user deleted';
                 });
 
             playlist = playlist ? playlist.view(true) : null;
@@ -76,9 +76,9 @@ const showAllAndFilterEmpty = async (req, res, next) => {
                                     return thumbnail;
                                 });
 
-                            let userName = await User.findById(playlist.author, 'nick')
+                            let userName = await User.findById(playlist.author, 'name')
                                 .then(author => {
-                                    return author && author.nick ? author.nick : 'user deleted';
+                                    return author && author.name ? author.name : 'user deleted';
                                 });
 
 
@@ -101,12 +101,12 @@ const showAllAndFilterEmpty = async (req, res, next) => {
 
                     return {
                         id: playlist._id,
-                        filmID: playlist.films[0]._id,
+                        film_id: playlist.films[0]._id,
                         author: playlist.author,
                         title: playlist.title,
                         isPublic: playlist.isPublic,
                         thumbnail: playlist.get('thumbnail'),
-                        authorName: playlist.get('author_name')
+                        author_name: playlist.get('author_name')
                     };
                 }))
                 .then(success(res))
