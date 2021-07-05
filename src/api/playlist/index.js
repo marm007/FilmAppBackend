@@ -1,8 +1,8 @@
 const {Router} = require('express');
 const {
-    create, index, showAll, showAllAndFilterEmpty, updateTitle, insertFilms, destroy, showAllSortByCreationDate, showAllSortByTitle, showAllSortByFilmsSize,
-    filterByTitle, filterByTitleStartsWith, filterByDateBetween, deleteFilms
+    create, index, showAll, update, partialUpdate, destroy, search
 } = require('./controller');
+
 const {token} = require('../../services/passport');
 const router = new Router();
 
@@ -22,41 +22,17 @@ router.get('/:id',
 router.get('/',
     showAll);
 
-router.get('/all',
-    showAllAndFilterEmpty);
-
 router.put('/:id',
-    updateTitle);
+    update);
 
-router.put('/:id/films',
-    insertFilms);
-
-router.put('/:id/films/delete', token({required: true}),
-    deleteFilms);
-
+router.patch('/:id',
+    partialUpdate);
 
 router.delete('/:id',
     token({required: true}),
     destroy);
 
-
-router.get('/sort/date/:dir',
-    showAllSortByCreationDate);
-
-router.get('/sort/title:dir',
-    showAllSortByTitle);
-
-router.get('/sort/films:dir',
-    showAllSortByFilmsSize);
-
-
-router.get('/filter/title/:title',
-    filterByTitle);
-
-router.get('/filter/title/start/:start',
-    filterByTitleStartsWith);
-
-router.get('/filter/date/:date',
-    filterByDateBetween);
+router.get('/search',
+    search);
 
 module.exports = router;

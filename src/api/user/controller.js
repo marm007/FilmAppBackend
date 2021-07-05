@@ -2,20 +2,34 @@ const {success, notFound} = require('../../services/response');
 const {sign} = require('../../services/jwt');
 const catchDuplicateEmail = require("./helpers").catchDuplicateEmail;
 
+const mongoose = require('mongoose')
 
 const User = require('./model').model;
-const Playlist = require('../playlist/model').model;
+const UserDetails = require('./detailsModel').model;
+
+const Comment = require('../comment/model').model;
 const Film = require('../film/model').model;
+const Playlist = require('../playlist/model').model;
 
+const ObjectId = require('mongoose').Types.ObjectId;
 
-const create = ({body}, res, next) => {
-    User.create(body)
-        .then(user => {
-            sign(user)
-                .then((token) => ({token, user: user.view(true)}))
-                .then(success(res, 201))
-        })
-        .catch((err) => catchDuplicateEmail(res, err, next));
+const create = async ({body}, res, next) => {
+    const session = await mongoose.startSession()
+    await session.withTransaction(async function executor() {
+        let user = await User.create([body], {session: session})
+        user = user[0]
+        await UserDetails.create([{user_id: user._id, reset_password: {token: 1, expires: Date.now()}}], {session: session})
+
+        let token = await sign(user)
+
+        await session.commitTransaction()
+        session.endSession()
+        
+        return success(res, 201)({token, user: user.view(true)})
+
+    }).catch((err) => {
+        return next(err)
+    })
 };
 
 const all = (req, res, next) =>
@@ -24,155 +38,82 @@ const all = (req, res, next) =>
         .then(success(res))
         .catch(next);
 
-const index = ({params}, res, next) =>
-    User.findById(params.id)
-        .then(notFound(res))
-        .then((user) => user ? user.view(false) : null)
-        .then(success(res))
-        .catch(next);
+const index = async ({query, user, params}, res, next) => {
+    const limit = parseInt(query.limit) || 10;
+    const skip = parseInt(query.skip) || 0;
 
-const me = ({user}, res) =>
-    res.json(user.view(true));
+    let userObject = await User.findById(params.id).then(user => user ? user.view() : null)
 
-const listMinePlaylists =  ({user}, res, next) => {
-    let playlists = user.playlists;
+    if(!userObject) return notFound(res)(null)
 
-    const requests = [];
+    let responseObject = {...userObject}
 
-    playlists.map(playlist => {
-        requests.push(
-            Playlist.findById(playlist)
-                .populate('films')
-                .then(res => {
-                    let resultFilms = res.films.map(a => a._id);
-                    return {
-                        id: playlist,
-                        title: res.title,
-                        films: resultFilms,
-                        film_id: (res.films[0] !== null && res.films.length !== 0) ? res.films[0]._id : null,
-                        thumbnail: (res.films[0] !== null && res.films.length !== 0) ? res.films[0].thumbnail._id : null,
-                        createdAt: res.createdAt
-                    }
-                })
-        );
-    });
+    if(query && query.full === true) {
 
-    Promise.all(requests)
-        .then(success(res))
-        .catch(next => {
-            console.log(next)
-        });
+        const match = user && ObjectId(userObject.id).equals(ObjectId(user.id)) ? {author_id: userObject.id} : {author_id: userObject.id, is_public: true}
 
-};
+        let comments = await Comment.find({author_id: userObject.id})
+            .skip(skip).limit(limit).then(comments => comments.map(comment => comment.view()))
+        let films = await Film.find({author_id: userObject.id})
+            .skip(skip).limit(limit).then(films => films.map(film => film.view()))
+        let playlists = await Playlist.find({match})
+            .skip(skip).limit(limit).then(playlists => playlists.map(playlist => playlist.view()))
+        responseObject = {...responseObject, comments, films, playlists}
+    } 
+   
+    return success(res, 200)(responseObject)
 
-const listMineFilms = ({user, query}, res, next) => {
-    let films = user.films;
+}
 
-    let start = query.start ? query.start : 0;
-    let limit = query.limit ? (query.limit >= films.length ? films.length - 1 : query.limit)
-        : films.length - 1;
+    
 
-    const requests = [];
+const me = async ({user, query}, res, next) => {
+   
+    const limit = parseInt(query.limit) || 10;
+    const skip = parseInt(query.skip) || 0;
 
-    films.forEach(film => {
-        requests.push(
-            Film.findById(film)
-                .then(notFound(res))
-                .then(res => {
-                    return {
-                        id: film,
-                        title: res.title,
-                        thumbnail: res.thumbnail,
-                        views: res.meta.views,
-                        createdAt: res.createdAt,
-                    }
-                })
-                .catch(next)
-        );
-    });
+    let me = await User.findById(user.id).then(user => user.view())
 
-    Promise.all(requests)
-        .then(success(res))
-        .catch(next);
+    let responseObject = {...me}
 
-};
+    if(query && query.full === true) {
+        let comments = await Comment.find({author_id: user.id})
+            .skip(skip).limit(limit).then(comments => comments.map(comment => comment.view()))
+        let films = await Film.find({author_id: user.id})
+            .skip(skip).limit(limit).then(films => films.map(film => film.view()))
+        let playlists = await Playlist.find({author_id: user.id})
+            .skip(skip).limit(limit).then(playlists => playlists.map(playlist => playlist.view()))
+        responseObject = {...responseObject, comments, films, playlists}
+    } 
+   
+    return success(res, 200)(responseObject)
+}
 
 
 const update = ({body, user}, res, next) =>
     User.findById(user.id)
         .then(notFound(res))
-        .then((user) => user ? Object.assign(user, body).save() : null)
-        .then((user) => user ? user.view(true) : null)
+        .then(user => user ? Object.assign(user, body).save() : null)
+        .then(user => user ? user.view(true) : null)
         .then(success(res))
-        .catch((err) => catchDuplicateEmail(res, err, next));
-
-
-const destroy = ({params}, res, next) =>
-    User.findById(params.id)
-        .then(notFound(res))
-        .then((user) => user ? user.remove() : null)
-        .then(success(res, 204))
         .catch(next);
 
 
-const updateMeta = async (req, res, next) => {
+const destroy = async ({user}, res, next) => {
+    const session = await mongoose.startSession()
 
-    const user = req.user;
-    const {body} = req;
+    await session.withTransaction(async function executor(){
+        await User.deleteOne({_id: user.id}).session(session)
+        await UserDetails.deleteOne({user_id: user.id}).session(session)
+        
+        await session.commitTransaction()
+        session.endSession()
 
-    let likes = 0;
-    let dislikes = 0;
+        return res.status(204).end()
 
-    if (!Object.keys(body).length)
-        return res.status(400).json({
-            errors: '`body` cannot be empty'
-        }).end();
-
-    if (!user) {
-        return res.status(401).json({
-            errors: 'unauthorized'
-        }).end()
-    }
-
-    if (body.disliked) {
-
-        if (user.meta.disliked.indexOf(body.disliked) <= -1) {
-            user.meta.disliked.push(body.disliked)
-            dislikes = 1;
-            if (user.meta.liked.indexOf(body.disliked) > -1) {
-                user.meta.liked.splice(user.meta.liked.indexOf(body.disliked), 1);
-                likes = -1;
-            }
-        } else {
-            return res.status(400).json({
-                errors: 'film already disliked'
-            }).end();
-        }
-    }
-
-    if (body.liked) {
-        if (user.meta.liked.indexOf(body.liked) <= -1) {
-            user.meta.liked.push(body.liked);
-            likes = 1;
-            if (user.meta.disliked.indexOf(body.liked) > -1) {
-                user.meta.disliked.splice(user.meta.disliked.indexOf(body.liked), 1);
-                dislikes = -1;
-            }
-        } else {
-            return res.status(400).json({
-                errors: 'film already liked'
-            }).end();
-        }
-    }
-
-
-    {
-        await user.save();
-        success(res)({likes: likes, dislikes: dislikes})
-    }
-
-};
+    }).catch(next)
+}
 
 module.exports = {
-    create,all, index, update, destroy, me, updateMeta, listMinePlaylists, listMineFilms
+    create,all, index, update, destroy, me
 };

@@ -9,6 +9,7 @@ const config = {
         ip: 'localhost',
         apiRoot: '/api',
         uploadDirectory: 'upload',
+        frontendUri: 'localhost:9000/reset',
         mongo: {
             options: {
                 useCreateIndex: true,
@@ -18,15 +19,15 @@ const config = {
         },
         mail: {
             auth: {
-                user: 'filmapp4@gmail.com',
-                pass: 'filmapp123'
+                user: 'roel.cormier87@ethereal.email',
+                pass: 'pZrUaZryyZS8WWTZdm'
             }
         }
 
     },
     test: {
         mongo: {
-            uri: 'mongodb+srv://Admin:marian12@filmappcluset-tuxyg.mongodb.net/filmapp-test?retryWrites=true',
+            uri: 'mongodb+srv://TestUser:435DkTppNBfoWEmm@filmappcluset-tuxyg.mongodb.net/filmapp-test?retryWrites=true',
             options: {
                 debug: true,
             }
@@ -35,7 +36,7 @@ const config = {
     },
     development: {
         mongo: {
-            uri: 'mongodb+srv://Admin:marian12@filmappcluset-tuxyg.mongodb.net/filmapp-dev?retryWrites=true',
+            uri: 'mongodb+srv://DevUser:QL6DNcQ7G90R1FkO@filmappcluset-tuxyg.mongodb.net/filmapp-dev?retryWrites=true',
             options: {
                 debug: true,
             }
@@ -45,14 +46,15 @@ const config = {
     production: {
         ip: '0.0.0.0',
         port: process.env.PORT || 8080,
+        frontendUri: process.env.FRONETEND_URI,
         mongo: {
-            uri: 'mongodb+srv://Admin:marian12@filmappcluset-tuxyg.mongodb.net/filmapp-production?retryWrites=true',
+            uri: process.env.MONGO_URI,
         },
         jwtSecret: process.env.SECRET,
         mail: {
             auth: {
-                user: 'filmapp4@gmail.com',
-                pass: 'filmapp123'
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS
             }
         }
     }

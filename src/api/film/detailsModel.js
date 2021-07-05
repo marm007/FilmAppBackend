@@ -10,11 +10,6 @@ const detailsSchema = new Schema({
         ref: 'Film',
         required: true
     },
-    author_id: {
-        type: Schema.ObjectId,
-        ref: 'User',
-        required: true
-    },
     comments_count: {
         type: Number,
         default: 0
@@ -28,7 +23,6 @@ const detailsSchema = new Schema({
 detailsSchema.methods = {
     view(full) {
         let view = {
-            author_id: this.author_id,
             comments_count: this.comments_count,
             comments: this.comments
         }

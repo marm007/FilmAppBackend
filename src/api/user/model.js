@@ -28,22 +28,6 @@ const userSchema = new Schema({
         enum: roles,
         default: 'user'
     },
-    meta: {
-        liked: [{
-            type: Schema.ObjectId,
-            ref: "Film"
-        }]
-        ,
-        disliked: [
-            {
-                type: Schema.ObjectId,
-                ref: "Film"
-            }
-        ]
-    },
-    resetPasswordToken: String,
-    resetPasswordExpires: Date
-
 }, {
     timestamps: true
 });
@@ -65,11 +49,9 @@ userSchema.pre('save', function (next) {
 userSchema.methods = {
     view(full) {
         let view = {};
-        let fields = ['id', 'name', 'films', 'playlists', 'comments', 'meta', 'meta'];
+        let fields = ['id', 'name'];
 
-        if (full) {
-            fields = [...fields, 'role', 'email'];
-        }
+        if (full) fields = [...fields, 'role', 'email'];
 
         fields.forEach((field) => {
             view[field] = this[field]

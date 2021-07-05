@@ -8,7 +8,7 @@ const {success, notFound} = require('../../services/response/');
 const Film = require('./model').model;
 const FilmDetail = require('./detailsModel').model;
 
-const User = require('../user/model').model;
+const UserDetails = require('../user/detailsModel').model;
 const Comment = require('../comment/model').model;
 
 const handleGridFsUpload = require('./upload-db');
@@ -166,11 +166,6 @@ const create = async (req, res, next) => {
 
                     let details = await FilmDetail.create([filmDetailBody], {session: session})
                         .then(details => details[0].view(false))
-
-                    let user = await User.findById(req.user._id, '_id name films').session(session);
-
-                    user.films.push(film.id);
-                    await user.save();
 
                     await session.commitTransaction();
                     session.endSession();
@@ -337,9 +332,9 @@ const getAll = ({query}, res, next) => {
 
     let find = {};
 
-    if (query.exclude && !ObjectId.isValid(query.exclude)) return res.status(400).end();
+    if(query.exclude && !ObjectId.isValid(query.exclude)) return res.status(400).end();
 
-    if (query.exclude) find = {_id: {$nin: [query.exclude]}};
+    if(query.exclude) find = {_id: {$nin: [query.exclude]}};
 
     if(query.search) find = {...find, title: new RegExp(query.search)}
 
@@ -358,18 +353,19 @@ const update = function ({user, body, params}, res, next) {
 
     let filmBody = {title: body.title, description: body.description}
 
-    if (user.role === 'admin' || (user.films.indexOf(params.id) > -1)) {
+    let details = filmDetail.findOne({film_id: film_id})
 
-        Film.findById(params.id)
-            .then(notFound(res))
-            .then((film) => film ? Object.assign(film, filmBody).save() : null)
-            .then((film) => film ? film.view(true) : null)
-            .then(success(res))
-            .catch(next);
+    if(!details) return notFound(res)(null)
 
-    } else {
+    if (!(user.role === 'admin' || user._id.equals(details.author_id))) 
         return res.status(403).end()
-    }
+
+    Film.findById(params.id)
+        .then(notFound(res))
+        .then((film) => film ? Object.assign(film, filmBody).save() : null)
+        .then((film) => film ? film.view(true) : null)
+        .then(success(res))
+        .catch(next);
 
 };
 
@@ -385,40 +381,78 @@ const partialUpdate = function ({user, body, params}, res, next) {
     if(body.title) filmBody = {...filmBody, title: body.title}
     if(body.description) filmBody = {...filmBody, description: body.description}
 
-    if (user.role === 'admin' || (user.films.indexOf(params.id) > -1)) {
+    let details = filmDetail.findOne({film_id: film_id})
 
-        Film.findById(params.id)
-            .then(notFound(res))
-            .then((film) => film ? Object.assign(film, filmBody).save() : null)
-            .then((film) => film ? film.view(true) : null)
-            .then(success(res))
-            .catch(next);
+    if(!details) return notFound(res)(null)
 
-    } else {
+    if (!(user.role === 'admin' || user._id.equals(details.author_id))) 
         return res.status(403).end()
-    }
 
+    Film.findById(params.id)
+        .then(notFound(res))
+        .then((film) => film ? Object.assign(film, filmBody).save() : null)
+        .then((film) => film ? film.view(true) : null)
+        .then(success(res))
+        .catch(next);
 };
 
 
 
-const updateMeta = function ({body, params}, res, next) {
-
-    if (!Object.keys(body).length)
-        return res.status(400).end();
-
-
-    let update = body.views ? {'meta.views': body.views} : {'meta.likes': body.likes, 'meta.dislikes': body.dislikes};
-
-    Film.findOneAndUpdate({_id: params.id}, {$inc: update}, {new: true})
+const view = ({body, params}, res, next) => 
+    Film.findOneAndUpdate({_id: params.id}, {$inc: {'meta.views': 1}}, {new: true})
         .then(notFound(res))
         .then((film) => film ? film.view(true) : null)
         .then(success(res))
         .catch(next);
 
 
-};
+const like = async (req, res, next) => {
 
+    const user = req.user;
+    const action = req.params.action;
+
+    const film_id = ObjectId(req.params.id)
+
+    if(action !== 'like' && action !== 'dislike') return res.status(400).send({error: '`action` param must be either like or dislike'})
+
+    const session = await mongoose.startSession()
+    await session.withTransaction(async function executor(){
+        let userDetails = await UserDetails.findOne({user_id: user._id}).session(session)
+        
+        let filmUpdate = {}
+
+        if (action === 'dislike') {
+            const added = await userDetails.disliked.addToSet(film_id)
+            const length = userDetails.liked.length
+            await userDetails.liked.pull(film_id)
+
+            if(added.length > 0) filmUpdate = {...filmUpdate, 'meta.dislikes': 1}
+            if(userDetails.liked.length !== length) filmUpdate = {...filmUpdate, 'meta.likes': -1}
+        } else {
+            const added = userDetails.liked.addToSet(film_id)
+            const length = userDetails.disliked.length
+            userDetails.disliked.pull(film_id)
+
+            if(added.length > 0) filmUpdate = {...filmUpdate, 'meta.likes': 1}
+            if(userDetails.disliked.length !== length) filmUpdate = {...filmUpdate, 'meta.dislikes': -1}
+        }
+
+        console.log(filmUpdate)
+
+        let film = await Film.findOneAndUpdate({_id: film_id}, {$inc: filmUpdate}, {new: true})
+        
+        await userDetails.save();
+
+        await session.commitTransaction()
+        session.endSession()
+
+        return success(res)(film.view(true))
+
+    }).catch((err) => {
+        console.error(err)
+        return res.status(500).send({error: 'Something went wrong!'})
+    })
+};
 
 const destroy = async (req, res, next) => {
     const session = await mongoose.startSession()
@@ -430,20 +464,21 @@ const destroy = async (req, res, next) => {
 
         const user = req.user;
 
-        let film = await Film
-            .findOne({_id: film_id}).session(session);
+        let details = FilmDetail.findOne({film_id: film_id})
 
-        if (film === null) return notFound(res)(null);
+        if (!(user.role === 'admin' || user._id.equals(details.author_id))) {
+            
+            await session.abortTransaction()
+            session.endSession()
 
-        if (user.films.indexOf(film_id) > -1) {
-            await User.findOneAndUpdate({_id: user.id},
-                {"$pull": {"films": film_id, "comments": {"$in": film.comments}}}).session(session);
-        } else if (user.role === 'admin') {
-            await User.findOneAndUpdate({"films": {$in: film_id}},
-                {"$pull": {"films": film_id, "comments": {"$in": film.comments}}}).session(session);
+            return res.status(403).end()
         }
 
-        await film.remove();
+        await FilmDetail.deleteOne({film_id: film_id})
+            .session(session)
+
+        await Film.deleteOne({_id: film_id})
+            .session(session);
 
         await Comment.deleteMany({_id: {$in: film.comments}}).session(session);
 
@@ -452,7 +487,7 @@ const destroy = async (req, res, next) => {
         await session.commitTransaction()
         session.endSession()
 
-        return res.status(200).end()
+        return res.status(204).end()
 
     }).catch(() => {
         return res.status(500).message({error: 'Something went wrong!'})
@@ -548,5 +583,6 @@ module.exports = {
     partialUpdate,
     destroy,
     search,
-    updateMeta,
+    view,
+    like,
 };

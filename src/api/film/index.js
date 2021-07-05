@@ -7,7 +7,8 @@ const {
     showThumbnail,
     update,
     partialUpdate,
-    updateMeta,
+    view,
+    like,
     destroy,
     search
 }
@@ -36,7 +37,7 @@ router.get('/:id',
 router.get('/:id/video',
     getVideo);
 
-router.get('/:film_id/thumbnail',
+router.get('/:id/thumbnail',
     showThumbnail);
 
 router.put('/:id',
@@ -47,8 +48,12 @@ router.patch('/:id',
     token({required: true}),
     partialUpdate);
 
-router.put('/:id/meta',
-    updateMeta);
+router.patch('/:id/view',
+    view);
+
+router.patch('/:id/:action',
+    token({required: true}),
+    like);
 
 router.delete('/:film_id',
     token({required: true}),

@@ -12,6 +12,11 @@ const filmSchema = new Schema({
       type: String,
       required: true
     },
+    author_id: {
+        type: Schema.ObjectId,
+        ref: 'User',
+        required: true
+    },
     description: {
         type: String,
         required: true
@@ -51,6 +56,7 @@ filmSchema.methods = {
         return full ? {
             id: this._id,
             ...view,
+            author_id: this.author_id,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         } : view;

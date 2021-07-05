@@ -6,17 +6,20 @@ const playlistSchema = new Schema({
         type: String,
         required: true,
     },
-    author: {
+    author_id: {
         type: Schema.ObjectId,
-        ref: 'User'
+        ref: 'User',
+        required: true
     },
-    films: [
-        {
+    author_name: {
+        type: String,
+        required: true
+    },
+    films_id: [{
             type: Schema.ObjectId,
             ref: "Film"
-        }],
-
-    isPublic: {
+    }],
+    is_public: {
         type: Boolean,
         default: true
     }
@@ -28,14 +31,15 @@ playlistSchema.methods = {
     view(full) {
         const view = {
             title: this.title,
-            author: this.author,
-            films: this.films,
+            author_id: this.author_id,
+            author_name: this.author_name,
+            films_id: this.films_id,
         };
 
         return full ? {
             ...view,
             id: this._id,
-            isPublic: this.isPublic,
+            is_public: this.is_public,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt
         } : view;

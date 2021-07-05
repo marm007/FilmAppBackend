@@ -22,16 +22,21 @@ router.use(function (req, res, next) {
 
 
 router.use(function (err, req, res, next) {
+   
     if (err.name === 'ValidationError') {
         const errors = _.map(err.errors, function (v) {
             return v.message;
         });
 
-        return res.status(404).send({errors});
-    }
-    console.log("zxczxczx")
+        return res.status(422).send({errors});
 
-    res.status(500).send({errors: ['Application error']});
+    } else if(err.name === 'MongoError' && err.code === 11000) {
+        return res.status(409).json({
+            error: 'Email already registered'
+        })
+    }
+
+    res.status(500).send({error: 'Application error'});
 });
 
 

@@ -134,9 +134,13 @@ const destroy = async (req, res, next) => {
 
         let comment = await Comment.findOne({_id: comment_id}).session(session);
 
-        if (!comment) return notFound(res)(null);
+        if (!comment) {
+            await session.abortTransaction()
+            session.endSession()
+            return notFound(res)(null);
+        }
 
-        if (!(user.role === 'admin' || user._id.equals(comment.author_id))) return res.status(401).end()
+        if (!(user.role === 'admin' || user._id.equals(comment.author_id))) return res.status(403).end()
 
         let details = await FilmDetails.findOneAndUpdate({film_id: comment.film_id},{$inc: {comments_counter: -1 }})
             .session(session);
@@ -162,13 +166,13 @@ const destroy = async (req, res, next) => {
 
         if(filmComment) await details.comments.pull(filmComment)
 
-        await comment.remove()
+        await Comment.deleteOne({_id: comment_id}).session(session)
         await details.save()
 
         await session.commitTransaction();
         session.endSession();
 
-        return res.status(200).end();
+        return res.status(204).end();
 
     }).catch((err) => {
         console.error(err)
@@ -185,17 +189,17 @@ const sortComments = async ({params, query}, res, next) => {
 
     if (query.created_at) {
         const value = query.created_at == 1 ? 1 : -1;
-        sort = {...sort, "comments.createdAt": value}
+        sort = {...sort, "createdAt": value}
     }
 
     if (query.author_name) {
         const value = query.author_name == 1 ? 1 : -1;
-        sort = {...sort, "comments.author_name": value}
+        sort = {...sort, "author_name": value}
     }
 
     if (query.text) {
         const value = query.text == 1 ? 1 : -1;
-        sort = {...sort, "comments.text": value}
+        sort = {...sort, "text": value}
     }
 
     if (Object.keys(sort).length === 0) sort = {"comments._id": -1};
