@@ -26,7 +26,7 @@ const userDetailsSchema = new Schema({
 
 userDetailsSchema.methods = {
     view(full) {
-        let view = {
+        const view = {
             liked: this.liked,
             disliked: this.disliked,
         };

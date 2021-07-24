@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const {Schema} = require('mongoose');
+const { Schema } = require('mongoose');
 
 const Thumbnail = require('../thumbnail/model').thumbnailSchema;
 
@@ -9,8 +9,8 @@ const filmSchema = new Schema({
         required: true,
     },
     author_name: {
-      type: String,
-      required: true
+        type: String,
+        required: true
     },
     author_id: {
         type: Schema.ObjectId,
@@ -66,4 +66,4 @@ filmSchema.methods = {
 
 const model = mongoose.model('Film', filmSchema);
 
-module.exports = {model, filmSchema};
+module.exports = { model, filmSchema };

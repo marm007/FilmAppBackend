@@ -7,8 +7,8 @@ const jwtVerify = util.promisify(jwt.verify);
 
 const sign = (user, options, method = jwtSign) => {
 
-    const {id, role} = user;
-    const payload = {id, role};
+    const {id, role, name} = user;
+    const payload = {id, role, name};
 
     return method(payload, jwtSecret, options);
 };

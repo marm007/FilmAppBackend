@@ -1,4 +1,4 @@
-const {Router} = require('express');
+const { Router } = require('express');
 const {
     create,
     index,
@@ -18,11 +18,11 @@ const {
     createComment, getAllComments, sortComments, filterComments
 } = require('../comment/controller');
 
-const {token} = require('../../services/passport');
+const { token } = require('../../services/passport');
 const router = new Router();
 
 router.post('/',
-    token({required: true}),
+    token({ required: true }),
     create);
 
 router.get('/',
@@ -41,29 +41,30 @@ router.get('/:id/thumbnail',
     showThumbnail);
 
 router.put('/:id',
-    token({required: true}),
+    token({ required: true }),
     update);
 
 router.patch('/:id',
-    token({required: true}),
+    token({ required: true }),
     partialUpdate);
 
 router.patch('/:id/view',
     view);
 
 router.patch('/:id/:action',
-    token({required: true}),
+    token({ required: true }),
     like);
 
 router.delete('/:film_id',
-    token({required: true}),
+    token({ required: true }),
     destroy);
 
 router.post('/:film_id/comments',
-    token({required: true}),
+    token({ required: true }),
     createComment);
 
 router.get('/:film_id/comments',
+    token({ required: false }),
     getAllComments);
 
 router.get('/:film_id/comments/sort',

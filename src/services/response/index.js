@@ -4,6 +4,8 @@ const success = (res, status, text) => (entity) => {
     } else {
         if (entity) {
             res.status(status || 200).json(entity);
+        } else {
+            res.status(status || 200).end()
         }
     }
 

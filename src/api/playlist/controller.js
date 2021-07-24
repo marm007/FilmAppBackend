@@ -1,39 +1,98 @@
 const mongoose = require('mongoose');
 
-const {success, notFound} = require('../../services/response/');
+const { success, notFound } = require('../../services/response/');
 
 const catchFilmNonExists = require('./helper').catchFilmNonExists;
 
 const Playlist = require('./model').model;
+const Film = require('../film/model').model;
 
-const create = async ({user, body}, res, next) => {
+const create = async ({ user, body }, res, next) => {
+    const session = await mongoose.startSession()
+    await session.withTransaction(async function executor() {
+        let { films_id, title, is_public } = body;
 
-    let {films_id, title, is_public} = body;
-    
-    if(is_public === undefined) is_public = true
-    else {
-        if (!(typeof is_public === 'boolean' || is_public instanceof Boolean)) 
-            return res.status(400).send({error: 'Is public must be either true or false!'})
-    }
+        if (is_public === undefined) is_public = true
+        else {
+            if (!(typeof is_public === 'boolean' || is_public instanceof Boolean))
+                return res.status(400).send({ error: 'Is public must be either true or false!' })
+        }
 
-    films_id = [...new Set(films_id)];
-    
-    const playlistBody = {is_public: is_public, films_id: films_id, 
-        title: title, author_id: user._id, author_name: user.name}
+        films_id = [...new Set(films_id)];
 
-    await Playlist.create(playlistBody)
-        .then(playlist => playlist[0].view(true))
-        .then(success(res, 201))
-        .catch(next);
+        const playlistBody = {
+            is_public: is_public,
+            films_id: films_id,
+            title: title,
+            author_id: user._id,
+            author_name: user.name
+        }
+
+        let playlist = await Playlist.create(playlistBody)
+
+        await session.commitTransaction();
+        session.endSession();
+
+        return success(res, 201)(playlist.view(true))
+    }).catch(err => {
+        console.error(err)
+        return next(err)
+    })
+
 };
 
-const index = ({params}, res, next) =>
-    Playlist.findById(params.id)
-        .populate({path: 'films_id', select: 'thumbnail -_id'})
-        .then(notFound(res))
-        .then(playlist => playlist ? playlist.view() : null)
-        .then(success(res))
-        .catch(next);
+const index = async ({ params, user, query }, res, next) => {
+    try {
+        const playlist = await Playlist.findById(params.id)
+
+        if (!playlist) return notFound(res)(null)
+        console.log("LDALADLADLLADLDA", playlist.is_public)
+        console.log("LDALADLADLLADLDA autho", playlist.author_id)
+        console.log("LDALADLADLLADLDA user", user)
+        if (!playlist.is_public && (!user || !playlist.author_id.equals(user._id))) {
+            return res.status(403).end()
+        }
+
+        if (query.reload) {
+            let playlistPopulated = await playlist
+                .populate({ path: 'films_id', $exists: true, select: 'thumbnail', perDocumentLimit: 1 })
+                .execPopulate()
+
+            playlistPopulated = playlistPopulated.view(true)
+            if (playlistPopulated.films.length > 0)
+                playlistPopulated.film_id = playlistPopulated.films[0]._id
+
+            delete playlistPopulated.films
+            return success(res)(playlistPopulated)
+
+        } else {
+            const films_id = playlist.films_id.map(id => id.toString())
+
+            let playlistPopulated = await playlist
+                .populate({
+                    path: 'films_id', select: '_id author_name title thumbnail', options: {
+                        retainNullValues: true
+                    }
+                })
+                .execPopulate()
+
+            playlistPopulated = playlistPopulated.view(true)
+
+            playlistPopulated.films = playlistPopulated.films.map((film, index) => film ? film.view(true) :
+                {
+                    id: films_id[index],
+                    isNonExisting: true
+                })
+
+
+            return success(res)(playlistPopulated)
+        }
+
+    } catch (err) {
+        console.log(err)
+        return next(err)
+    }
+}
 
 const showAll = (req, res, next) => {
 
@@ -41,128 +100,144 @@ const showAll = (req, res, next) => {
 
     const limit = parseInt(req.query.limit) || 10;
     const skip = parseInt(req.query.skip) || 0;
-    const is_add = req.query.is_add === true ? true : false
 
-    let filter = user ? {$or:[ {'author_id': user._id}, {'is_public': true}]} :  {'is_public': true}
-    filter = {...filter, films_id: {$exists: true, $ne: []}}
-    
-    if(is_add && user)
-        Playlist.find({author_id: user._id}, '_id title is_public')
-            .then(playlists => playlists.map(playlist => playlist.view()))
-            .then(success(res))
-            .catch(next)
-    else 
-        Playlist.find(filter)
-            .populate({path: 'films_id',  $exists: true, select: 'thumbnail', perDocumentLimit: 1})
-            .skip(skip)
-            .limit(limit)
-            .then(playlists => {
-                playlists = playlists.filter(playlist => playlist.films_id[0])
-                return playlists.map(playlist => {
-                    playlist = playlist.view(true)
-                    playlist.thumbnail = playlist.films_id[0].thumbnail
-                    delete playlist.films_id
-                    return playlist
-                })
+    let filter = user ? { $or: [{ 'author_id': user._id }, { 'is_public': true }] } : { 'is_public': true }
+    filter = { ...filter, films_id: { $exists: true, $not: { $size: 0 } } }
+
+    {
+        /*  Playlist.aggregate([
+         {
+             "$match": filter
+         },
+         {
+             "$unwind": {
+                 "path": "$films_id",
+                 "preserveNullAndEmptyArrays": false
+             }
+         },
+         { "$lookup": {
+             "from": Film.collection.name,
+             "localField": "films_id",
+             "foreignField": "_id",
+             "as": "film",
+             
+           }
+         },
+         
+     ])
+         .then(success(res))
+         .catch(err => {
+             console.log(err)
+             next(err)
+         }) */
+    }
+
+    Playlist.find(filter)
+        .populate({ path: 'films_id', $exists: true, select: 'thumbnail', perDocumentLimit: 1 })
+        .skip(skip)
+        .limit(limit)
+        .then(playlists => {
+            return playlists.map(playlist => {
+                playlist = playlist.view(true)
+                if (playlist.films.length > 0)
+                    playlist.film_id = playlist.films[0]._id
+                delete playlist.films
+
+                return playlist
             })
-            .then(success(res))
-            .catch(next)
-    
+        })
+        .then(success(res))
+        .catch(next)
+
 }
 
 
-const update = async ({user, body, params}, res, next) => {
+const update = async ({ user, body, params }, res, next) => {
 
-    const {title, films_id} = body;
-    
+    const { title, films_id } = body;
+
     if (title === undefined || title === null)
         return res.status(400).json({
-            errors:
-                "Title is required!"
+            errors: "Title is required!"
         }).end();
 
     if (!(typeof title === 'string' || title instanceof String))
         return res.status(400).json({
-            errors:
-                "Path title must be of type String!"
+            errors: "Path title must be of type String!"
         }).end();
 
     if (films_id === undefined || films_id === null || films_id.length === 0)
         return res.status(400).json({
-            errors:
-                "Path films array is required!"
+            errors: "Path films_id array is required!"
         }).end();
 
     if (!(films_id instanceof Array))
         return res.status(400).json({
-            errors:
-                "Path films must be of type Array!"
+            errors: "Path films_id must be of type Array!"
         }).end();
 
-    
-    let playlist = Playlist.findById(params.id)
-        .then((playlist) => playlist ? playlist.view(true) : null)
 
-    if(!playlist) return notFound(res)(null)
+    let playlist = await Playlist.findById(params.id)
 
-    if (!(user.role === 'admin' || playlist.author_id.equals(user._id))) 
-        return res.status(403).send({error: 'You are forbidden to perform this action!'})
-    
-    const playlistBody = {films_id: [...new Set(films_id)], title: title}
+    if (!playlist) return notFound(res)(null)
+
+    if (!(user.role === 'admin' || playlist.author_id.equals(user._id)))
+        return res.status(403).end()
+
+    const playlistBody = { films_id: [...new Set(films_id)], title: title }
     await Object.assign(playlist, playlistBody).save()
 
     return success(res)(playlist)
 };
 
-const partialUpdate = async ({user, body, params}, res, next) => {
+const partialUpdate = async ({ user, body, params }, res, next) => {
 
-    const {title, films_id} = body;
+    const { title, films_id } = body;
     const isRemoveFilms = body.is_remove_films === true ? true : false
 
-    if (title && 
+    if (title &&
         !(typeof title === 'string' || title instanceof String))
-            return res.status(400).json({
-                errors:
-                    "Path title must be of type String!"
-            }).end();
-   
-    if (films_id && films_id.length > 0 && 
+        return res.status(400).json({
+            errors: "Path title must be of type String!"
+        }).end();
+
+    if (films_id && films_id.length > 0 &&
         !(films_id instanceof Array))
-            return res.status(400).json({
-                errors:
-                    "Path films must be of type Array!"
-            }).end();
+        return res.status(400).json({
+            errors: "Path films must be of type Array!"
+        }).end();
 
-    let playlist = Playlist.findById(params.id)
-            .then((playlist) => playlist ? playlist.view(true) : null)
+    let playlist = await Playlist.findById(params.id)
 
-    if(!playlist) return notFound(res)(null)
+    if (!playlist) return notFound(res)(null)
 
-    if (!(user.role === 'admin' || playlist.author_id.equals(user._id))) 
+    if (!(user.role === 'admin' || playlist.author_id.equals(user._id)))
         return res.status(403).end()
-
-    for (let film_id of films_id) {
-        if (!(mongoose.Types.ObjectId.isValid(film_id))) {
-            return res.status(400).json({
-                errors: `Film with id ${film_id} is not ObjectID type`
-            });
-        }
-    }
-
-    const filmsIdBody = films_id.map(id => mongoose.Types.ObjectId(id));
 
     let playlistBody = {}
 
-    if(filmsIdBody && filmsIdBody.length > 0) 
-        if(isRemoveFilms)
-            playlistBody = {...playlistBody, "$addToSet": {"films_id": filmsIdBody}}
-        else
-            playlistBody = {...playlistBody, "$pull": {"films_id": {$in: filmsIdBody}}} 
+    if (films_id) {
+        for (let film_id of films_id) {
+            if (!(mongoose.Types.ObjectId.isValid(film_id))) {
+                return res.status(400).json({
+                    errors: `Film with id ${film_id} is not ObjectID type`
+                });
+            }
+        }
 
-    if(title) playlistBody = {...playlistBody, title: title}
+        const filmsIdBody = films_id.map(id => mongoose.Types.ObjectId(id));
 
-    Playlist.findOneAndUpdate({_id: params.id},
-         playlistBody, {new: true})
+        if (filmsIdBody && filmsIdBody.length > 0)
+            if (isRemoveFilms)
+                playlistBody = { ...playlistBody, "$pull": { "films_id": { $in: filmsIdBody } } }
+            else
+                playlistBody = { ...playlistBody, "$addToSet": { "films_id": filmsIdBody } }
+    }
+
+    if (title) playlistBody = { ...playlistBody, title: title }
+
+    await Playlist.findOneAndUpdate({ _id: params.id },
+        playlistBody, { new: true })
         .then(notFound(res))
         .then((playlist) => playlist.view(true))
         .then(success(res))
@@ -170,16 +245,26 @@ const partialUpdate = async ({user, body, params}, res, next) => {
 };
 
 
-const destroy = async ({id}, res, next) => 
-    Playlist
-        .findOneAndDelete({_id: id})
-        .then(notFound(res))
-        .then(success(res, 204))
-        .catch(next)
-   
+const destroy = async ({ params, user }, res, next) => {
+    let playlist = await Playlist
+        .findOne({ _id: params.id })
 
-const search = async({query}, res, next) => {
-    
+    if (!playlist) return notFound(res)(null)
+
+    if (!(user.role === 'admin' || playlist.author_id.equals(user._id)))
+        return res.status(403).end()
+
+    try {
+        await playlist.remove()
+        return success(res, 204)(null)
+    } catch (err) {
+        return next(err)
+    }
+}
+
+
+const search = async ({ query }, res, next) => {
+
     const limit = parseInt(query.limit) || 10;
     const skip = parseInt(query.skip) || 0;
 
@@ -187,17 +272,17 @@ const search = async({query}, res, next) => {
 
     if (query.sort_created_at) {
         const value = query.sort_created_at == 1 ? 1 : -1;
-        sort = {...sort, "createdAt": value}
+        sort = { ...sort, "createdAt": value }
     }
 
     if (query.sort_title) {
         const value = query.sort_title == 1 ? 1 : -1;
-        sort = {...sort, "title": value}
+        sort = { ...sort, "title": value }
     }
 
     if (query.sort_text) {
         const value = query.sort_text == 1 ? 1 : -1;
-        sort = {...sort, "films_id": value}
+        sort = { ...sort, "films_id": value }
     }
 
     let match = {};
@@ -211,29 +296,29 @@ const search = async({query}, res, next) => {
         let dateEnd = dateEndObject.toDate();
 
         if (isNaN(dateStart.getTime())) {
-            let message = query.filter_date_start ?
-                {error: 'Bad dateStart format! Format must by DD/MM/YYYYY.'} : {error: 'Starting date cannot be empty!'};
+            let message = query.filter_date_start ? { error: 'Bad dateStart format! Format must by DD/MM/YYYYY.' } : { error: 'Starting date cannot be empty!' };
             return res.status(400).send(message)
         }
 
         if (isNaN(dateEnd.getTime())) {
             if (query.filter_date_end)
-                return res.status(400).send({error: 'Bad dateEnd format! Format must by DD/MM/YYYYY.'});
+                return res.status(400).send({ error: 'Bad dateEnd format! Format must by DD/MM/YYYYY.' });
             else dateEnd = moment().toDate()
         }
 
         match = {
-            ...match, "createdAt": {
+            ...match,
+            "createdAt": {
                 "$gte": dateStart,
                 "$lt": dateEnd
             }
         }
     }
 
-    if (query.filter_title_starts) 
-        match = {...match, "title": new RegExp("^" + query.filter_title_starts)}
-    else if(query.filter_title) 
-        match = {...match, "title": query.filter_title}
+    if (query.filter_title_starts)
+        match = { ...match, "title": new RegExp("^" + query.filter_title_starts) }
+    else if (query.filter_title)
+        match = { ...match, "title": query.filter_title }
 
     Playlist.find(match)
         .skip(skip)

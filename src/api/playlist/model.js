@@ -30,15 +30,15 @@ const playlistSchema = new Schema({
 playlistSchema.methods = {
     view(full) {
         const view = {
+            id: this._id,
             title: this.title,
             author_id: this.author_id,
             author_name: this.author_name,
-            films_id: this.films_id,
+            films: this.films_id,
         };
 
         return full ? {
             ...view,
-            id: this._id,
             is_public: this.is_public,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt

@@ -3,7 +3,7 @@ const async = require('async');
 
 const _ = require("lodash");
 
-const {success, notFound} = require('../../services/response/');
+const { success, notFound } = require('../../services/response/');
 
 const Film = require('./model').model;
 const FilmDetail = require('./detailsModel').model;
@@ -17,59 +17,56 @@ const ObjectId = require('mongoose').Types.ObjectId;
 
 const sharp = require('sharp');
 
-const unlinkGridFs = async (film_id, ...thumbnailIds) => {
+const unlinkGridFs = async(film_id, ...thumbnailIds) => {
 
     const FilmGridFs = require('./gridfs');
     const ThumbnailGridFs = require('../thumbnail/gridfs');
 
-    console.log(thumbnailIds)
-    if (film_id) await FilmGridFs.unlink({_id: film_id}, (err, doc) => {
-    });
+    if (film_id) await FilmGridFs.unlink({ _id: film_id }, (err, doc) => {});
 
     for (let id of thumbnailIds) {
         if (!id) continue;
-        await ThumbnailGridFs.unlink({_id: id}, (err, doc) => {
-        });
+        await ThumbnailGridFs.unlink({ _id: id }, (err, doc) => {});
     }
 };
 
-const create = async (req, res, next) => {
+const create = async(req, res, next) => {
 
-    handleGridFsUpload(req, res, async (err) => {
+    handleGridFsUpload(req, res, async(err) => {
 
         const user = req.user;
 
-        if (err) return res.status(404).send({error: err.message});
+        if (err) return res.status(404).send({ error: err.message });
 
-        if (!req.files || !req.files.thumbnail || !req.files.film) return res.status(404).send({error: 'Film or thumbnail not found'});
+        if (!req.files || !req.files.thumbnail || !req.files.film) return res.status(404).send({ error: 'Film or thumbnail not found' });
 
         if (!req.body.title || req.body.title === '') {
             await unlinkGridFs(req.files.film[0].id, req.files.thumbnail[0].id);
-            return res.status(400).send({error: `Path title is required!`})
+            return res.status(400).send({ error: `Path title is required!` })
         }
 
         if (!req.body.description || req.body.description === '') {
             await unlinkGridFs(req.files.film[0].id, req.files.thumbnail[0].id);
-            return res.status(400).send({error: `Path description is required!`})
+            return res.status(400).send({ error: `Path description is required!` })
         }
 
 
         const ThumbnailGridFs = require('../thumbnail/gridfs');
 
-        let thumbnail = await ThumbnailGridFs.findById({_id: req.files.thumbnail[0].id});
+        let thumbnail = await ThumbnailGridFs.findById({ _id: req.files.thumbnail[0].id });
 
-        if (!thumbnail) return res.status(404).send({error: 'Thumbnail dose not exists!'});
+        if (!thumbnail) return res.status(404).send({ error: 'Thumbnail dose not exists!' });
 
         const [originalName, mime] = thumbnail.metadata.originalname.split('.');
-        let filmStream = await ThumbnailGridFs.read({filename: thumbnail.filename});
+        let filmStream = await ThumbnailGridFs.read({ filename: thumbnail.filename });
 
         let buffer = [];
 
-        await filmStream.on('data', function (chunk) {
+        await filmStream.on('data', function(chunk) {
             buffer.push(chunk);
         });
 
-        await filmStream.on('end', async function () {
+        await filmStream.on('end', async function() {
             let all = new Buffer.concat(buffer);
 
             const previewName = originalName + Date.now() + '_preview.' + mime;
@@ -94,13 +91,13 @@ const create = async (req, res, next) => {
                 .toBuffer();
 
             if (!previewBuffer || !smallBuffer || !posterBuffer) {
-                return res.status(400).send({error: 'Bad request!'})
+                return res.status(400).send({ error: 'Bad request!' })
             }
 
             let stream = require('stream');
 
             async.waterfall([
-                function (done) {
+                function(done) {
                     let bufferStream = new stream.PassThrough();
                     bufferStream.end(previewBuffer);
                     ThumbnailGridFs.write({
@@ -111,7 +108,7 @@ const create = async (req, res, next) => {
                         done(error)
                     })
                 },
-                function (done) {
+                function(done) {
                     let bufferStream = new stream.PassThrough();
                     bufferStream.end(smallBuffer);
 
@@ -123,7 +120,7 @@ const create = async (req, res, next) => {
                         done(error)
                     })
                 },
-                function (done) {
+                function(done) {
                     let bufferStream = new stream.PassThrough();
                     bufferStream.end(posterBuffer);
 
@@ -135,12 +132,12 @@ const create = async (req, res, next) => {
                         done(error)
                     })
                 }
-            ], async function (err) {
+            ], async function(err) {
 
                 if (err) {
                     let message = err.message ? err.message : 'Something went wrong!';
                     await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
-                    return res.status(400).send({error: message})
+                    return res.status(400).send({ error: message })
                 }
 
 
@@ -150,6 +147,7 @@ const create = async (req, res, next) => {
                     const filmBody = {
                         _id: req.files.film[0].id,
                         author_name: req.user.name,
+                        author_id: req.user._id,
                         description: req.body.description,
                         title: req.body.title,
                         thumbnail: thumbnailBody
@@ -157,23 +155,22 @@ const create = async (req, res, next) => {
 
                     const filmDetailBody = {
                         film_id: req.files.film[0].id,
-                        author_id: req.user._id,
                     }
 
 
-                    let film = await Film.create([filmBody], {session: session})
+                    let film = await Film.create([filmBody], { session: session })
                         .then((film) => film[0].view(true));
 
-                    let details = await FilmDetail.create([filmDetailBody], {session: session})
+                    let details = await FilmDetail.create([filmDetailBody], { session: session })
                         .then(details => details[0].view(false))
 
                     await session.commitTransaction();
                     session.endSession();
-                    return success(res, 201)({...film, ...details});
-                }).catch(async (err) => {
+                    return success(res, 201)({...film, ...details });
+                }).catch(async(err) => {
                     console.error(err)
                     await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
-                    return res.status(400).send({error: 'Something went wrong!'})
+                    return res.status(400).send({ error: 'Something went wrong!' })
                 })
             })
         })
@@ -181,30 +178,36 @@ const create = async (req, res, next) => {
 
 };
 
-const index = async (req, res, next) => {
+const index = async(req, res, next) => {
 
     if (!ObjectId.isValid(req.params.id)) return res.status(400).end();
 
 
-    let film = await Film.findOne({_id: req.params.id})
+    let film = await Film.findOne({ _id: req.params.id })
 
-    if(!film) return res.status(404).send({error: `Film cannot be found!`})
+    if (!film) return res.status(404).send({ error: `Film cannot be found!` })
 
-    let filmDetails = await FilmDetail.findOne({film_id: film.id})
 
-    if(!filmDetails) return res.status(404)
-        .send({error: `FilmDetails cannot be found!`})
+    let filmDetails = await FilmDetail.findOne({ film_id: film.id })
+        .then(details => {
+            if (!details) return details
+            let comments = details.comments.map(comment => comment.view())
+            return { comments: comments, comments_count: details.comments_count }
+        })
 
-    return res.status(200).send({...film.view(true), ...filmDetails.view()})
+    if (!filmDetails) return res.status(404)
+        .send({ error: `FilmDetails cannot be found!` })
+
+    return res.status(200).send({...film.view(true), ...filmDetails })
 };
 
-const showThumbnail = async ({params, query}, res, next) => {
+const showThumbnail = async({ params, query }, res, next) => {
 
     const ThumbnailGridFs = require('../thumbnail/gridfs');
 
 
     let film = await Film
-        .findOne({_id: params.film_id});
+        .findOne({ _id: params.id });
 
     if (film === null)
         return notFound(res)(null);
@@ -240,7 +243,7 @@ const showThumbnail = async ({params, query}, res, next) => {
     }
 
 
-    await ThumbnailGridFs.findById({_id: ObjectId(thumbnailId)}, (err, thumbnail) => {
+    await ThumbnailGridFs.findById({ _id: ObjectId(thumbnailId) }, (err, thumbnail) => {
 
 
         if (err || thumbnail === null)
@@ -252,12 +255,12 @@ const showThumbnail = async ({params, query}, res, next) => {
         if (query.width && query.width !== 'small' && query.width !== 'poster' && query.width !== 'preview') {
             let buffer = [];
 
-            stream.on('data', function (chunk) {
+            stream.on('data', function(chunk) {
                 buffer.push(chunk);
 
             });
 
-            stream.on('end', async function () {
+            stream.on('end', async function() {
                 let all = new Buffer.concat(buffer);
                 await sharp(all)
                     .resize(width, height)
@@ -285,12 +288,12 @@ const showThumbnail = async ({params, query}, res, next) => {
 
 const getVideo = (req, res, next) => {
 
-    const {params} = req;
+    const { params } = req;
 
     const FilmGridFs = require('./gridfs');
 
 
-    FilmGridFs.findById({start: 10, end: 20, _id: params.id}, (err, film) => {
+    FilmGridFs.findById({ start: 10, end: 20, _id: params.id }, (err, film) => {
         if (err || film === null) return notFound(res)();
 
         if (req.headers['range']) {
@@ -315,49 +318,53 @@ const getVideo = (req, res, next) => {
             });
 
 
-            let filmStream = FilmGridFs.read({start: start, end: end, filename: film.filename});
+            let filmStream = FilmGridFs.read({ start: start, end: end, filename: film.filename });
             filmStream.pipe(res);
 
         } else {
             res.header('Content-Type', film.contentType);
             res.header('Content-Length', film.length);
-            let filmStream = FilmGridFs.read({filename: film.filename});
+            let filmStream = FilmGridFs.read({ filename: film.filename });
             filmStream.pipe(res);
         }
     });
 
 };
 
-const getAll = ({query}, res, next) => {
+const getAll = ({ query }, res, next) => {
+
+    const limit = parseInt(query.limit) || 10;
+    const skip = parseInt(query.skip) || 0;
 
     let find = {};
 
-    if(query.exclude && !ObjectId.isValid(query.exclude)) return res.status(400).end();
+    if (query.exclude && !ObjectId.isValid(query.exclude)) return res.status(400).end();
 
-    if(query.exclude) find = {_id: {$nin: [query.exclude]}};
+    if (query.exclude) find = { _id: { $nin: [query.exclude] } };
 
-    if(query.search) find = {...find, title: new RegExp(query.search)}
+    if (query.search) find = {...find, title: new RegExp(query.search) }
 
     Film.find(find)
-        .skip(parseInt(query.start)).limit(parseInt(query.limit))
+        .skip(skip)
+        .limit(limit)
         .then(film => film.map(film => film.view(true)))
         .then(success(res))
         .catch(next);
 };
 
-const update = function ({user, body, params}, res, next) {
+const update = function({ user, body, params }, res, next) {
 
-    if(!Object.keys(body).length || !body.title || !body.description)
-        return res.status(400).send({error: 'Please provide title and description to perform a full film update!'})
+    if (!Object.keys(body).length || !body.title || !body.description)
+        return res.status(400).send({ error: 'Please provide title and description to perform a full film update!' })
 
 
-    let filmBody = {title: body.title, description: body.description}
+    let filmBody = { title: body.title, description: body.description }
 
-    let details = filmDetail.findOne({film_id: film_id})
+    let details = filmDetail.findOne({ film_id: film_id })
 
-    if(!details) return notFound(res)(null)
+    if (!details) return notFound(res)(null)
 
-    if (!(user.role === 'admin' || user._id.equals(details.author_id))) 
+    if (!(user.role === 'admin' || user._id.equals(details.author_id)))
         return res.status(403).end()
 
     Film.findById(params.id)
@@ -371,21 +378,21 @@ const update = function ({user, body, params}, res, next) {
 
 
 
-const partialUpdate = function ({user, body, params}, res, next) {
+const partialUpdate = function({ user, body, params }, res, next) {
 
     if (!Object.keys(body).length)
-        return res.status(400).send({error: 'Please provide title or description to perform a partial film update!'})
+        return res.status(400).send({ error: 'Please provide title or description to perform a partial film update!' })
 
     let filmBody = {}
 
-    if(body.title) filmBody = {...filmBody, title: body.title}
-    if(body.description) filmBody = {...filmBody, description: body.description}
+    if (body.title) filmBody = {...filmBody, title: body.title }
+    if (body.description) filmBody = {...filmBody, description: body.description }
 
-    let details = filmDetail.findOne({film_id: film_id})
+    let details = filmDetail.findOne({ film_id: film_id })
 
-    if(!details) return notFound(res)(null)
+    if (!details) return notFound(res)(null)
 
-    if (!(user.role === 'admin' || user._id.equals(details.author_id))) 
+    if (!(user.role === 'admin' || user._id.equals(details.author_id)))
         return res.status(403).end()
 
     Film.findById(params.id)
@@ -398,27 +405,28 @@ const partialUpdate = function ({user, body, params}, res, next) {
 
 
 
-const view = ({body, params}, res, next) => 
-    Film.findOneAndUpdate({_id: params.id}, {$inc: {'meta.views': 1}}, {new: true})
-        .then(notFound(res))
-        .then((film) => film ? film.view(true) : null)
-        .then(success(res))
-        .catch(next);
+const view = ({ body, params }, res, next) =>
+    Film.findOneAndUpdate({ _id: params.id }, { $inc: { 'meta.views': 1 } }, { new: true })
+    .then(notFound(res))
+    .then((film) => film ? film.view(true) : null)
+    .then(success(res))
+    .catch(next);
 
 
-const like = async (req, res, next) => {
+
+const like = async(req, res, next) => {
 
     const user = req.user;
-    const action = req.params.action;
+    const action = req.body.action;
 
     const film_id = ObjectId(req.params.id)
 
-    if(action !== 'like' && action !== 'dislike') return res.status(400).send({error: '`action` param must be either like or dislike'})
+    if (action !== 'like' && action !== 'dislike') return res.status(400).send({ error: '`action` param must be either like or dislike' })
 
     const session = await mongoose.startSession()
-    await session.withTransaction(async function executor(){
-        let userDetails = await UserDetails.findOne({user_id: user._id}).session(session)
-        
+    await session.withTransaction(async function executor() {
+        let userDetails = await UserDetails.findOne({ user_id: user._id }).session(session)
+
         let filmUpdate = {}
 
         if (action === 'dislike') {
@@ -426,21 +434,27 @@ const like = async (req, res, next) => {
             const length = userDetails.liked.length
             await userDetails.liked.pull(film_id)
 
-            if(added.length > 0) filmUpdate = {...filmUpdate, 'meta.dislikes': 1}
-            if(userDetails.liked.length !== length) filmUpdate = {...filmUpdate, 'meta.likes': -1}
+            if (added.length > 0) filmUpdate = {...filmUpdate, 'meta.dislikes': 1 }
+            if (userDetails.liked.length !== length) filmUpdate = {...filmUpdate, 'meta.likes': -1 }
+            if(added.length === 0) {
+                await userDetails.disliked.pull(film_id)
+                filmUpdate = {...filmUpdate, 'meta.dislikes': -1 }
+            }
         } else {
             const added = userDetails.liked.addToSet(film_id)
             const length = userDetails.disliked.length
             userDetails.disliked.pull(film_id)
 
-            if(added.length > 0) filmUpdate = {...filmUpdate, 'meta.likes': 1}
-            if(userDetails.disliked.length !== length) filmUpdate = {...filmUpdate, 'meta.dislikes': -1}
+            if (added.length > 0) filmUpdate = {...filmUpdate, 'meta.likes': 1 }
+            if (userDetails.disliked.length !== length) filmUpdate = {...filmUpdate, 'meta.dislikes': -1 }
+            if(added.length === 0) {
+                await userDetails.liked.pull(film_id)
+                filmUpdate = {...filmUpdate, 'meta.likes': -1 }
+            }
         }
 
-        console.log(filmUpdate)
+        let film = await Film.findOneAndUpdate({ _id: film_id }, { $inc: filmUpdate }, { new: true })
 
-        let film = await Film.findOneAndUpdate({_id: film_id}, {$inc: filmUpdate}, {new: true})
-        
         await userDetails.save();
 
         await session.commitTransaction()
@@ -450,11 +464,11 @@ const like = async (req, res, next) => {
 
     }).catch((err) => {
         console.error(err)
-        return res.status(500).send({error: 'Something went wrong!'})
+        return res.status(500).send({ error: 'Something went wrong!' })
     })
 };
 
-const destroy = async (req, res, next) => {
+const destroy = async(req, res, next) => {
     const session = await mongoose.startSession()
 
     await session.withTransaction(async function executor() {
@@ -464,23 +478,23 @@ const destroy = async (req, res, next) => {
 
         const user = req.user;
 
-        let details = FilmDetail.findOne({film_id: film_id})
+        let film = await Film.findById(film_id )
 
-        if (!(user.role === 'admin' || user._id.equals(details.author_id))) {
-            
+        if (!(user.role === 'admin' || user._id.equals(film.author_id))) {
+
             await session.abortTransaction()
             session.endSession()
 
             return res.status(403).end()
         }
 
-        await FilmDetail.deleteOne({film_id: film_id})
+        await FilmDetail.deleteOne({ film_id: film_id })
             .session(session)
 
-        await Film.deleteOne({_id: film_id})
+        await Film.deleteOne({ _id: film_id })
             .session(session);
 
-        await Comment.deleteMany({_id: {$in: film.comments}}).session(session);
+        await Comment.deleteMany({ _id: { $in: film.comments } }).session(session);
 
         await unlinkGridFs(film_id, film.thumbnail.id, film.thumbnail.small, film.thumbnail.poster, film.thumbnail.preview)
 
@@ -490,14 +504,17 @@ const destroy = async (req, res, next) => {
         return res.status(204).end()
 
     }).catch(() => {
-        return res.status(500).message({error: 'Something went wrong!'})
+        return res.status(500).message({ error: 'Something went wrong!' })
     })
 
 
 };
 
 
-const search = ({params, query}, res, next) => {
+const search = ({ params, query }, res, next) => {
+    
+    const limit = parseInt(query.limit) || 10;
+    const skip = parseInt(query.skip) || 0;
 
     let sort = {};
 
@@ -508,11 +525,11 @@ const search = ({params, query}, res, next) => {
 
     if (query.sort) {
         if (query.sort === 'upload_date') {
-            sort = {sort: {createdAt: query.dir}};
+            sort = { sort: { createdAt: query.dir } };
         } else if (query.sort === 'view_count') {
-            sort = {sort: {'meta.views': query.dir}};
+            sort = { sort: { 'meta.views': query.dir } };
         } else if (query.sort === 'rating') {
-            sort = {sort: {'meta.likes': query.dir}};
+            sort = { sort: { 'meta.likes': query.dir } };
         }
     }
 
@@ -555,17 +572,17 @@ const search = ({params, query}, res, next) => {
         }
 
 
-        Film.find({title: new RegExp(query.search)}, projection, sort)
+        Film.find({ title: new RegExp(query.search) }, projection, sort)
             .where('createdAt').gte(destDate).lte(currentDate)
-            .skip(parseInt(query.start)).limit(parseInt(query.limit))
+            .skip(skip).limit(limit)
             .then(film => film.map(film => film.view(true)))
             .then(success(res))
             .catch(next);
 
     } else {
 
-        Film.find({title: new RegExp(query.search)}, projection, sort)
-            .skip(parseInt(query.start)).limit(parseInt(query.limit))
+        Film.find({ title: new RegExp(query.search) }, projection, sort)
+            .skip(skip).limit(limit)
             .then(films => films.map(film => film.view(true)))
             .then(success(res))
             .catch(next);
