@@ -9,7 +9,7 @@ const config = {
         ip: 'localhost',
         apiRoot: '/api',
         uploadDirectory: 'upload',
-        frontendUri: 'localhost:9000/reset',
+        frontendUri: 'localhost:3000/reset/',
         mongo: {
             options: {
                 useCreateIndex: true,

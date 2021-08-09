@@ -46,9 +46,7 @@ const index = async ({ params, user, query }, res, next) => {
         const playlist = await Playlist.findById(params.id)
 
         if (!playlist) return notFound(res)(null)
-        console.log("LDALADLADLLADLDA", playlist.is_public)
-        console.log("LDALADLADLLADLDA autho", playlist.author_id)
-        console.log("LDALADLADLLADLDA user", user)
+
         if (!playlist.is_public && (!user || !playlist.author_id.equals(user._id))) {
             return res.status(403).end()
         }
@@ -130,7 +128,7 @@ const showAll = (req, res, next) => {
              console.log(err)
              next(err)
          }) */
-    }
+    }//
 
     Playlist.find(filter)
         .populate({ path: 'films_id', $exists: true, select: 'thumbnail', perDocumentLimit: 1 })
@@ -192,7 +190,7 @@ const update = async ({ user, body, params }, res, next) => {
 
 const partialUpdate = async ({ user, body, params }, res, next) => {
 
-    const { title, films_id } = body;
+    const { title, films_id, is_public } = body;
     const isRemoveFilms = body.is_remove_films === true ? true : false
 
     if (title &&
@@ -233,6 +231,8 @@ const partialUpdate = async ({ user, body, params }, res, next) => {
             else
                 playlistBody = { ...playlistBody, "$addToSet": { "films_id": filmsIdBody } }
     }
+
+    if (is_public !== undefined) playlistBody = { ...playlistBody, is_public: is_public }
 
     if (title) playlistBody = { ...playlistBody, title: title }
 

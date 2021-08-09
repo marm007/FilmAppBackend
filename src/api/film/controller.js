@@ -17,22 +17,22 @@ const ObjectId = require('mongoose').Types.ObjectId;
 
 const sharp = require('sharp');
 
-const unlinkGridFs = async(film_id, ...thumbnailIds) => {
+const unlinkGridFs = async (film_id, ...thumbnailIds) => {
 
     const FilmGridFs = require('./gridfs');
     const ThumbnailGridFs = require('../thumbnail/gridfs');
 
-    if (film_id) await FilmGridFs.unlink({ _id: film_id }, (err, doc) => {});
+    if (film_id) await FilmGridFs.unlink({ _id: film_id }, (err, doc) => { });
 
     for (let id of thumbnailIds) {
         if (!id) continue;
-        await ThumbnailGridFs.unlink({ _id: id }, (err, doc) => {});
+        await ThumbnailGridFs.unlink({ _id: id }, (err, doc) => { });
     }
 };
 
-const create = async(req, res, next) => {
+const create = async (req, res, next) => {
 
-    handleGridFsUpload(req, res, async(err) => {
+    handleGridFsUpload(req, res, async (err) => {
 
         const user = req.user;
 
@@ -62,11 +62,11 @@ const create = async(req, res, next) => {
 
         let buffer = [];
 
-        await filmStream.on('data', function(chunk) {
+        await filmStream.on('data', function (chunk) {
             buffer.push(chunk);
         });
 
-        await filmStream.on('end', async function() {
+        await filmStream.on('end', async function () {
             let all = new Buffer.concat(buffer);
 
             const previewName = originalName + Date.now() + '_preview.' + mime;
@@ -97,7 +97,7 @@ const create = async(req, res, next) => {
             let stream = require('stream');
 
             async.waterfall([
-                function(done) {
+                function (done) {
                     let bufferStream = new stream.PassThrough();
                     bufferStream.end(previewBuffer);
                     ThumbnailGridFs.write({
@@ -108,7 +108,7 @@ const create = async(req, res, next) => {
                         done(error)
                     })
                 },
-                function(done) {
+                function (done) {
                     let bufferStream = new stream.PassThrough();
                     bufferStream.end(smallBuffer);
 
@@ -120,7 +120,7 @@ const create = async(req, res, next) => {
                         done(error)
                     })
                 },
-                function(done) {
+                function (done) {
                     let bufferStream = new stream.PassThrough();
                     bufferStream.end(posterBuffer);
 
@@ -132,7 +132,7 @@ const create = async(req, res, next) => {
                         done(error)
                     })
                 }
-            ], async function(err) {
+            ], async function (err) {
 
                 if (err) {
                     let message = err.message ? err.message : 'Something went wrong!';
@@ -166,8 +166,8 @@ const create = async(req, res, next) => {
 
                     await session.commitTransaction();
                     session.endSession();
-                    return success(res, 201)({...film, ...details });
-                }).catch(async(err) => {
+                    return success(res, 201)({ ...film, ...details });
+                }).catch(async (err) => {
                     console.error(err)
                     await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
                     return res.status(400).send({ error: 'Something went wrong!' })
@@ -178,7 +178,7 @@ const create = async(req, res, next) => {
 
 };
 
-const index = async(req, res, next) => {
+const index = async (req, res, next) => {
 
     if (!ObjectId.isValid(req.params.id)) return res.status(400).end();
 
@@ -198,10 +198,10 @@ const index = async(req, res, next) => {
     if (!filmDetails) return res.status(404)
         .send({ error: `FilmDetails cannot be found!` })
 
-    return res.status(200).send({...film.view(true), ...filmDetails })
+    return res.status(200).send({ ...film.view(true), ...filmDetails })
 };
 
-const showThumbnail = async({ params, query }, res, next) => {
+const showThumbnail = async ({ params, query }, res, next) => {
 
     const ThumbnailGridFs = require('../thumbnail/gridfs');
 
@@ -255,12 +255,12 @@ const showThumbnail = async({ params, query }, res, next) => {
         if (query.width && query.width !== 'small' && query.width !== 'poster' && query.width !== 'preview') {
             let buffer = [];
 
-            stream.on('data', function(chunk) {
+            stream.on('data', function (chunk) {
                 buffer.push(chunk);
 
             });
 
-            stream.on('end', async function() {
+            stream.on('end', async function () {
                 let all = new Buffer.concat(buffer);
                 await sharp(all)
                     .resize(width, height)
@@ -293,39 +293,110 @@ const getVideo = (req, res, next) => {
     const FilmGridFs = require('./gridfs');
 
 
-    FilmGridFs.findById({ start: 10, end: 20, _id: params.id }, (err, film) => {
+    FilmGridFs.findById({ _id: params.id }, (err, film) => {
         if (err || film === null) return notFound(res)();
 
-        if (req.headers['range']) {
+        {
+            /* if (req.headers['range']) {
+                console.log('dscd')
+    
+                let positions = req.headers['range'].replace(/bytes=/, "").split("-");
+    
+                let total = film.length;
+                let start = parseInt(positions[0], 10);
+                let end = positions[1] ? parseInt(positions[1], 10) : total - 1;
+    
+                let chunksize = (end - start) + 1;
+    
+                let maxChunk = 1024 * 1024; // 1MB at a time
+                if (chunksize > maxChunk) {
+                    end = start + maxChunk - 1;
+                    chunksize = (end - start) + 1;
+                }
+    
+                if (start >= total || end >= total) {
+                    // Return the 416 Range Not Satisfiable.
+                    res.writeHead(416, {
+                        "Content-Range": `bytes /${total}`
+                    });
+                    return res.end();
+                }
+    
+                res.writeHead(206, {
+                    'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
+                    'Accept-Ranges': 'bytes',
+                    'Content-Length': chunksize,
+                    'Content-Type': film.contentType
+                });
+    
+    
+                let filmStream = FilmGridFs.read({ start: start, end: end, filename: film.filename });
+                filmStream.pipe(res);
+    
+            } else {
+                console.log('aldllad')
+                const head = {
+                    'Content-Length': film.length,
+                    'Content-Type': film.contentType
+                }
+                res.writeHead(200, head)
+                let filmStream = FilmGridFs.read({ filename: film.filename });
+                filmStream.pipe(res);
+            } */
+        }
 
-            let positions = req.headers['range'].replace(/bytes=/, "").split("-");
-            let start = parseInt(positions[0], 10);
-            let total = film.length;
-            let end = positions[1] ? parseInt(positions[1], 10) : total - 1;
+        const size = film.length;
+        const range = req.headers.range;
+
+        if (range) {
+            let [start, end] = range.replace(/bytes=/, "").split("-");
+            start = parseInt(start, 10);
+            end = end ? parseInt(end, 10) : size - 1;
+
+            if (!isNaN(start) && isNaN(end)) {
+                start = start;
+                end = size - 1;
+            }
+            if (isNaN(start) && !isNaN(end)) {
+                start = size - end;
+                end = size - 1;
+            }
+
+            const maxChunk = 1024 * 1024;
             let chunksize = (end - start) + 1;
 
-            let maxChunk = 1024 * 1024; // 1MB at a time
             if (chunksize > maxChunk) {
                 end = start + maxChunk - 1;
                 chunksize = (end - start) + 1;
             }
 
-            res.writeHead(206, {
-                'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
-                'Accept-Ranges': 'bytes',
-                'Content-Length': chunksize,
-                'Content-Type': film.contentType
-            });
+            if (start >= size || end >= size || start === end) {
+                res.writeHead(416, {
+                    "Content-Range": `bytes */${size}`
+                });
+                return res.end();
+            }
 
+            res.writeHead(206, {
+                "Content-Range": `bytes ${start}-${end}/${size}`,
+                "Accept-Ranges": "bytes",
+                "Content-Length": chunksize,
+                "Content-Type": "video/mp4"
+            });
 
             let filmStream = FilmGridFs.read({ start: start, end: end, filename: film.filename });
             filmStream.pipe(res);
 
         } else {
-            res.header('Content-Type', film.contentType);
-            res.header('Content-Length', film.length);
+
+            res.writeHead(200, {
+                "Content-Length": size,
+                "Content-Type": "video/mp4"
+            });
+
             let filmStream = FilmGridFs.read({ filename: film.filename });
             filmStream.pipe(res);
+
         }
     });
 
@@ -342,7 +413,7 @@ const getAll = ({ query }, res, next) => {
 
     if (query.exclude) find = { _id: { $nin: [query.exclude] } };
 
-    if (query.search) find = {...find, title: new RegExp(query.search) }
+    if (query.search) find = { ...find, title: new RegExp(query.search) }
 
     Film.find(find)
         .skip(skip)
@@ -352,7 +423,7 @@ const getAll = ({ query }, res, next) => {
         .catch(next);
 };
 
-const update = function({ user, body, params }, res, next) {
+const update = function ({ user, body, params }, res, next) {
 
     if (!Object.keys(body).length || !body.title || !body.description)
         return res.status(400).send({ error: 'Please provide title and description to perform a full film update!' })
@@ -378,15 +449,15 @@ const update = function({ user, body, params }, res, next) {
 
 
 
-const partialUpdate = function({ user, body, params }, res, next) {
+const partialUpdate = function ({ user, body, params }, res, next) {
 
     if (!Object.keys(body).length)
         return res.status(400).send({ error: 'Please provide title or description to perform a partial film update!' })
 
     let filmBody = {}
 
-    if (body.title) filmBody = {...filmBody, title: body.title }
-    if (body.description) filmBody = {...filmBody, description: body.description }
+    if (body.title) filmBody = { ...filmBody, title: body.title }
+    if (body.description) filmBody = { ...filmBody, description: body.description }
 
     let details = filmDetail.findOne({ film_id: film_id })
 
@@ -407,14 +478,14 @@ const partialUpdate = function({ user, body, params }, res, next) {
 
 const view = ({ body, params }, res, next) =>
     Film.findOneAndUpdate({ _id: params.id }, { $inc: { 'meta.views': 1 } }, { new: true })
-    .then(notFound(res))
-    .then((film) => film ? film.view(true) : null)
-    .then(success(res))
-    .catch(next);
+        .then(notFound(res))
+        .then((film) => film ? film.view(true) : null)
+        .then(success(res))
+        .catch(next);
 
 
 
-const like = async(req, res, next) => {
+const like = async (req, res, next) => {
 
     const user = req.user;
     const action = req.body.action;
@@ -434,22 +505,22 @@ const like = async(req, res, next) => {
             const length = userDetails.liked.length
             await userDetails.liked.pull(film_id)
 
-            if (added.length > 0) filmUpdate = {...filmUpdate, 'meta.dislikes': 1 }
-            if (userDetails.liked.length !== length) filmUpdate = {...filmUpdate, 'meta.likes': -1 }
-            if(added.length === 0) {
+            if (added.length > 0) filmUpdate = { ...filmUpdate, 'meta.dislikes': 1 }
+            if (userDetails.liked.length !== length) filmUpdate = { ...filmUpdate, 'meta.likes': -1 }
+            if (added.length === 0) {
                 await userDetails.disliked.pull(film_id)
-                filmUpdate = {...filmUpdate, 'meta.dislikes': -1 }
+                filmUpdate = { ...filmUpdate, 'meta.dislikes': -1 }
             }
         } else {
             const added = userDetails.liked.addToSet(film_id)
             const length = userDetails.disliked.length
             userDetails.disliked.pull(film_id)
 
-            if (added.length > 0) filmUpdate = {...filmUpdate, 'meta.likes': 1 }
-            if (userDetails.disliked.length !== length) filmUpdate = {...filmUpdate, 'meta.dislikes': -1 }
-            if(added.length === 0) {
+            if (added.length > 0) filmUpdate = { ...filmUpdate, 'meta.likes': 1 }
+            if (userDetails.disliked.length !== length) filmUpdate = { ...filmUpdate, 'meta.dislikes': -1 }
+            if (added.length === 0) {
                 await userDetails.liked.pull(film_id)
-                filmUpdate = {...filmUpdate, 'meta.likes': -1 }
+                filmUpdate = { ...filmUpdate, 'meta.likes': -1 }
             }
         }
 
@@ -468,7 +539,7 @@ const like = async(req, res, next) => {
     })
 };
 
-const destroy = async(req, res, next) => {
+const destroy = async (req, res, next) => {
     const session = await mongoose.startSession()
 
     await session.withTransaction(async function executor() {
@@ -478,7 +549,9 @@ const destroy = async(req, res, next) => {
 
         const user = req.user;
 
-        let film = await Film.findById(film_id )
+        let film = await Film.findById(film_id)
+
+        if (!film) return notFound(res)(null)
 
         if (!(user.role === 'admin' || user._id.equals(film.author_id))) {
 
@@ -504,7 +577,7 @@ const destroy = async(req, res, next) => {
         return res.status(204).end()
 
     }).catch(() => {
-        return res.status(500).message({ error: 'Something went wrong!' })
+        return res.status(500).json({ error: 'Something went wrong!' })
     })
 
 
@@ -512,7 +585,7 @@ const destroy = async(req, res, next) => {
 
 
 const search = ({ params, query }, res, next) => {
-    
+
     const limit = parseInt(query.limit) || 10;
     const skip = parseInt(query.skip) || 0;
 
@@ -572,7 +645,7 @@ const search = ({ params, query }, res, next) => {
         }
 
 
-        Film.find({ title: new RegExp(query.search) }, projection, sort)
+        Film.find({ title: new RegExp("^" + query.search, 'i') }, projection, sort)
             .where('createdAt').gte(destDate).lte(currentDate)
             .skip(skip).limit(limit)
             .then(film => film.map(film => film.view(true)))
@@ -581,7 +654,7 @@ const search = ({ params, query }, res, next) => {
 
     } else {
 
-        Film.find({ title: new RegExp(query.search) }, projection, sort)
+        Film.find({ title: new RegExp("^" + query.search, 'i') }, projection, sort)
             .skip(skip).limit(limit)
             .then(films => films.map(film => film.view(true)))
             .then(success(res))

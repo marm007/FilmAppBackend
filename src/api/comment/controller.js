@@ -22,7 +22,7 @@ const createComment = async (req, res, next) => {
                 errors: ['path text is required']
             });
 
-        let details = await FilmDetails.findOneAndUpdate({ film_id: film_id }, { $inc: { comments_counter: 1 } }).session(session);
+        let details = await FilmDetails.findOne({ film_id: film_id }).session(session);
 
         if (details === null) {
             return notFound(res)(details);
@@ -44,7 +44,7 @@ const createComment = async (req, res, next) => {
         details.comments.unshift(commentBody);
 
         if (details.comments.length > 10) details.comments.pop()
-        
+
         details.comments_count = details.comments_count + 1
 
         await details.save();
@@ -153,7 +153,7 @@ const destroy = async (req, res, next) => {
 
         if (!(user.role === 'admin' || user._id.equals(comment.author_id))) return res.status(403).end()
 
-        let details = await FilmDetails.findOneAndUpdate({ film_id: comment.film_id }, { $inc: { comments_counter: -1 } })
+        let details = await FilmDetails.findOneAndUpdate({ film_id: comment.film_id }, { $inc: { comments_count: -1 } })
             .session(session);
 
         let commentToInsert = await Comment.find({
@@ -178,6 +178,7 @@ const destroy = async (req, res, next) => {
         }
 
         if (filmComment) await details.comments.pull(filmComment)
+        details.comments_count = details.comments_count - 1
 
         await Comment.deleteOne({ _id: comment_id }).session(session)
         await details.save()
@@ -200,10 +201,8 @@ const sortComments = async ({ params, query }, res, next) => {
 
     let sort = {};
 
-    if (query.created_at) {
-        const value = query.created_at == 1 ? 1 : -1;
-        sort = { ...sort, "createdAt": value }
-    }
+    const value = query.created_at == 1 ? 1 : -1;
+    sort = { "createdAt": value }
 
     if (query.author_name) {
         const value = query.author_name == 1 ? 1 : -1;
@@ -214,8 +213,6 @@ const sortComments = async ({ params, query }, res, next) => {
         const value = query.text == 1 ? 1 : -1;
         sort = { ...sort, "text": value }
     }
-
-    if (Object.keys(sort).length === 0) sort = { "comments._id": -1 };
 
     await Comment.find({ film_id: params.film_id })
         .sort(sort)

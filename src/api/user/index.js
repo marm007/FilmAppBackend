@@ -1,15 +1,15 @@
-const {Router} = require('express');
-const {token} = require('../../services/passport');
-const {all, me, index, create, update, destroy} = require("./controller");
+const { Router } = require('express');
+const { token } = require('../../services/passport');
+const { all, me, index, create, update, partialUpdate, destroy } = require("./controller");
 
 const router = new Router();
 
 router.get('/',
-    token({required: true, roles: ['admin']}),
+    token({ required: true, roles: ['admin'] }),
     all);
 
 router.get('/me',
-    token({required: true}),
+    token({ required: true }),
     me);
 
 router.get('/:id',
@@ -20,11 +20,15 @@ router.post('/',
     create);
 
 router.put('/',
-    token({required: true}),
+    token({ required: true }),
     update);
 
+router.patch('/',
+    token({ required: true }),
+    partialUpdate)
+
 router.delete('/',
-    token({required: true}),
+    token({ required: true }),
     destroy);
 
 

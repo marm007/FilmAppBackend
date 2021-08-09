@@ -42,7 +42,7 @@ const index = async ({ query, user, params }, res, next) => {
     const limit = parseInt(query.limit) || 10;
     const skip = parseInt(query.skip) || 0;
 
-    let userObject = await User.findById(params.id).then(user => user ? user.view() : null)
+    let userObject = await User.findById(user.id).then(user => user ? user.view() : null)
 
     if (!userObject) return notFound(res)(null)
 
@@ -83,8 +83,8 @@ const me = async ({ user, query }, res, next) => {
 
     }
 
-    if (query.films || query.skipFilms) {
-        const skipFilms = query.skipFilms ? parseInt(query.skipFilms) : skip
+    if (query.films || query.skipFilms !== undefined) {
+        const skipFilms = query.skipFilms !== undefined ? parseInt(query.skipFilms) : skip
         let films = await Film.find({ author_id: user._id })
             .skip(skipFilms).limit(limit).then(films => films.map(film => film.view(true)))
         responseObject = { ...responseObject, films }
@@ -97,7 +97,7 @@ const me = async ({ user, query }, res, next) => {
             .then(playlists => playlists.map(playlist => playlist.view(true)))
         responseObject = { ...responseObject, playlists }
 
-    } else if (query.skipPlaylists) {
+    } else if (query.skipPlaylists !== undefined) {
         const skipPlaylists = parseInt(query.skipPlaylists)
         let playlists = await Playlist.find({ author_id: user._id })
             .skip(skipPlaylists)
@@ -126,14 +126,57 @@ const me = async ({ user, query }, res, next) => {
 }
 
 
-const update = ({ body, user }, res, next) =>
-    User.findById(user.id)
-        .then(notFound(res))
-        .then(user => user ? Object.assign(user, body).save() : null)
-        .then(user => user ? user.view(true) : null)
-        .then(success(res))
-        .catch(next);
+const update = async ({ body, user }, res, next) => {
 
+    try {
+        let me = User.findById(user.id)
+        if (!me) return notFound(res)(null)
+
+        if (!body.password) {
+            return res.status(404).json({ 'error': 'Path `password` is required.' })
+        }
+        else if (!body.name) {
+            return res.status(404).json({ 'error': 'Path `name` is required.' })
+        }
+        else if (!body.email) {
+            return res.status(404).json({ 'error': 'Path `email` is required.' })
+        }
+
+        me.password = body.password
+        me.name = body.name
+        me.email = body.email
+
+        await me.save()
+        const accessToken = await sign(me)
+        return success(res)({ ...me.view(true), accessToken: accessToken })
+    } catch (err) {
+        return next(err)
+    }
+
+}
+
+
+const partialUpdate = async ({ body, user }, res, next) => {
+
+    try {
+        let me = await User.findById(user.id)
+
+        if (!me) return notFound(res)(null)
+        let updateBody = {}
+
+        if (body.password) me.password = body.password
+        if (body.email) me.email = body.email
+        if (body.name) me.name = body.name
+
+
+        await me.save()
+        const accessToken = await sign(me)
+
+        return success(res)({ ...me.view(true), accessToken: accessToken })
+    } catch (err) {
+        return next(err)
+    }
+}
 
 const destroy = async ({ user }, res, next) => {
     const session = await mongoose.startSession()
@@ -151,5 +194,5 @@ const destroy = async ({ user }, res, next) => {
 }
 
 module.exports = {
-    create, all, index, update, destroy, me
+    create, all, index, update, partialUpdate, destroy, me
 };
