@@ -7,6 +7,9 @@
     "devstart": "nodemon src/app.js",
     "test": "cross-env NODE_ENV=test nyc --reporter=html --reporter=text mocha"
   },
+  "engines": {
+    "node": ">=12.18.3"
+  },
   "dependencies": {
     "async": "^3.2.0",
     "bcrypt": "^5.0.1",
