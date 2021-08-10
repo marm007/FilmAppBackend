@@ -37,7 +37,7 @@ router.get('/:id',
     index);
 
 router.get('/:id/video',
-    showFilm);
+    showFilm1);
 
 router.get('/:id/thumbnail',
     showThumbnail);
