@@ -4,6 +4,8 @@ const {
     index,
     getAll,
     getVideo,
+    showFilm,
+    showFilm1,
     showThumbnail,
     update,
     partialUpdate,
@@ -35,7 +37,7 @@ router.get('/:id',
     index);
 
 router.get('/:id/video',
-    getVideo);
+    showFilm);
 
 router.get('/:id/thumbnail',
     showThumbnail);
