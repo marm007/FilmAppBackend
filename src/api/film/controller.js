@@ -9,11 +9,19 @@ const FilmDetail = require('./detailsModel').model;
 const UserDetails = require('../user/detailsModel').model;
 const Comment = require('../comment/model').model;
 
-const handleGridFsUpload = require('./upload-db');
-
 const ObjectId = require('mongoose').Types.ObjectId;
 
 const sharp = require('sharp');
+
+const formidable = require('formidable');
+const fs = require('fs')
+
+let gridfs = null
+let thumbnailGridfs = null
+mongoose.connection.on('connected', () => {
+    gridfs = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'films' })
+    thumbnailGridfs = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'thumbnails' })
+})
 
 const unlinkGridFs = async (film_id, ...thumbnailIds) => {
 
@@ -27,161 +35,156 @@ const unlinkGridFs = async (film_id, ...thumbnailIds) => {
         await ThumbnailGridFs.unlink({ _id: id }, (err, doc) => { });
     }
 };
+const path = require('path');
+const mime = require('mime-types')
 
-const create = async (req, res, next) => {
+const parseName = (file, name = '') => {
+    return path.parse(file.name).name + Date.now() + name + '.' + mime.extension(file.type)
+}
 
-    handleGridFsUpload(req, res, async (err) => {
+const create = (req, res, next) => {
+    const form = formidable({ multiples: true });
 
-        const user = req.user;
-
-        if (err) return res.status(404).send({ error: err.message });
-
-        if (!req.files || !req.files.thumbnail || !req.files.film) return res.status(404).send({ error: 'Film or thumbnail not found' });
-
-        if (!req.body.title || req.body.title === '') {
-            await unlinkGridFs(req.files.film[0].id, req.files.thumbnail[0].id);
-            return res.status(400).send({ error: `Path title is required!` })
+    form.parse(req, async (err, fields, files) => {
+        if (err) {
+            next(err);
+            return;
         }
+        try {
 
-        if (!req.body.description || req.body.description === '') {
-            await unlinkGridFs(req.files.film[0].id, req.files.thumbnail[0].id);
-            return res.status(400).send({ error: `Path description is required!` })
-        }
-
-
-        const ThumbnailGridFs = require('../thumbnail/gridfs');
-
-        let thumbnail = await ThumbnailGridFs.findById({ _id: req.files.thumbnail[0].id });
-
-        if (!thumbnail) return res.status(404).send({ error: 'Thumbnail dose not exists!' });
-
-        const [originalName, mime] = thumbnail.metadata.originalname.split('.');
-        let filmStream = await ThumbnailGridFs.read({ filename: thumbnail.filename });
-
-        let buffer = [];
-
-        await filmStream.on('data', function (chunk) {
-            buffer.push(chunk);
-        });
-
-        await filmStream.on('end', async function () {
-            let all = new Buffer.concat(buffer);
-
-            const previewName = originalName + Date.now() + '_preview.' + mime;
-            const fileName = originalName + Date.now() + '_thumbnail.' + mime;
-            const posterName = originalName + Date.now() + '_poster.' + mime;
-
-
-            let thumbnailBody = {
-                _id: req.files.thumbnail[0].id,
+            const filmBody = {
+                ...fields,
+                author_name: req.user.name,
+                author_id: req.user._id,
             };
 
-            const previewBuffer = await sharp(all)
-                .resize(25, Math.round(25 * 9 / 16))
-                .toBuffer();
+            let film = new Film(filmBody)
+            let filmDetail = new FilmDetail({ film_id: film._id })
 
-            const smallBuffer = await sharp(all)
-                .resize(250, Math.round(250 * 9 / 16))
-                .toBuffer();
+            if (files.film && files.thumbnail) {
 
-            const posterBuffer = await sharp(all)
-                .resize(500, Math.round(500 * 9 / 16))
-                .toBuffer();
-
-            if (!previewBuffer || !smallBuffer || !posterBuffer) {
-                return res.status(400).send({ error: 'Bad request!' })
-            }
-
-            let stream = require('stream');
-
-            async.waterfall([
-                function (done) {
-                    let bufferStream = new stream.PassThrough();
-                    bufferStream.end(previewBuffer);
-                    ThumbnailGridFs.write({
-                        filename: previewName,
-                        contentType: thumbnail.contentType
-                    }, bufferStream, (error, file) => {
-                        thumbnailBody.preview = file._id;
-                        done(error)
-                    })
-                },
-                function (done) {
-                    let bufferStream = new stream.PassThrough();
-                    bufferStream.end(smallBuffer);
-
-                    ThumbnailGridFs.write({
-                        filename: fileName,
-                        contentType: thumbnail.contentType
-                    }, bufferStream, (error, file) => {
-                        thumbnailBody.small = file._id;
-                        done(error)
-                    })
-                },
-                function (done) {
-                    let bufferStream = new stream.PassThrough();
-                    bufferStream.end(posterBuffer);
-
-                    ThumbnailGridFs.write({
-                        filename: posterName,
-                        contentType: thumbnail.contentType
-                    }, bufferStream, (error, file) => {
-                        thumbnailBody.poster = file._id;
-                        done(error)
-                    })
-                }
-            ], async function (err) {
-
-                if (err) {
-                    let message = err.message ? err.message : 'Something went wrong!';
-                    await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
-                    return res.status(400).send({ error: message })
-                }
-
-
-                const session = await mongoose.startSession();
-
-                await session.withTransaction(async function executor() {
-                    const filmBody = {
-                        _id: req.files.film[0].id,
-                        author_name: req.user.name,
-                        author_id: req.user._id,
-                        description: req.body.description,
-                        title: req.body.title,
-                        thumbnail: thumbnailBody
-                    };
-
-                    const filmDetailBody = {
-                        film_id: req.files.film[0].id,
+                let filmWriteStream = gridfs.openUploadStreamWithId(
+                    film._id,
+                    parseName(files.film), {
+                    contentType: files.film.type || 'binary/octet-stream',
+                    metadata: {
+                        originalname: files.film.name
                     }
-
-
-                    let film = await Film.create([filmBody], { session: session })
-                        .then((film) => film[0].view(true));
-
-                    let details = await FilmDetail.create([filmDetailBody], { session: session })
-                        .then(details => details[0].view(false))
-
-                    await session.commitTransaction();
-                    session.endSession();
-                    return success(res, 201)({ ...film, ...details });
-                }).catch(async (err) => {
-                    console.error(err)
-                    await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
-                    return res.status(400).send({ error: 'Something went wrong!' })
                 })
-            })
-        })
-    })
 
-};
+                const previewBuffer = await sharp(files.thumbnail.path)
+                    .resize(25, Math.round(25 * 9 / 16))
+                    .toBuffer();
+
+                const smallBuffer = await sharp(files.thumbnail.path)
+                    .resize(250, Math.round(250 * 9 / 16))
+                    .toBuffer();
+
+                const posterBuffer = await sharp(files.thumbnail.path)
+                    .resize(500, Math.round(500 * 9 / 16))
+                    .toBuffer();
+
+                if (!previewBuffer || !smallBuffer || !posterBuffer) {
+                    return res.status(400).send({ error: 'Bad request!' })
+                }
+
+                filmWriteStream.once('finish', function () {
+
+                    let stream = require('stream');
+                    const ThumbnailGridFs = require('../thumbnail/gridfs');
+
+                    let thumbnailBody = {}
+
+                    async.waterfall([
+                        function (done) {
+                            let thumbnailWriteStream = thumbnailGridfs.openUploadStream(
+                                parseName(files.thumbnail), {
+                                contentType: files.thumbnail.type || 'binary/octet-stream',
+                                metadata: {
+                                    originalname: files.thumbnail.name
+                                }
+                            })
+
+                            thumbnailWriteStream.once('finish', function () {
+                                thumbnailBody._id = thumbnailWriteStream.id
+                                done(null)
+                            })
+
+                            fs.createReadStream(files.thumbnail.path).pipe(thumbnailWriteStream)
+                        },
+                        function (done) {
+                            let bufferStream = new stream.PassThrough();
+                            bufferStream.end(previewBuffer);
+                            ThumbnailGridFs.write({
+                                filename: parseName(files.thumbnail, '_preview'),
+                                contentType: files.thumbnail.type
+                            }, bufferStream, (error, file) => {
+                                thumbnailBody.preview = file._id;
+                                done(error)
+                            })
+                        },
+                        function (done) {
+                            let bufferStream = new stream.PassThrough();
+                            bufferStream.end(smallBuffer);
+
+                            ThumbnailGridFs.write({
+                                filename: parseName(files.thumbnail, '_small'),
+                                contentType: files.thumbnail.type
+                            }, bufferStream, (error, file) => {
+                                thumbnailBody.small = file._id;
+                                done(error)
+                            })
+                        },
+                        function (done) {
+                            let bufferStream = new stream.PassThrough();
+                            bufferStream.end(posterBuffer);
+
+                            ThumbnailGridFs.write({
+                                filename: parseName(files.thumbnail, '_poster'),
+                                contentType: files.thumbnail.type
+                            }, bufferStream, (error, file) => {
+                                thumbnailBody.poster = file._id;
+                                done(error)
+                            })
+                        }
+                    ], async function (err) {
+
+                        if (err) {
+                            let message = err.message ? err.message : 'Something went wrong!';
+                            //await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
+                        }
+
+                        film.thumbnail = thumbnailBody
+                        await film.save()
+                    })
+
+                    let thumbnailWriteStream = thumbnailGridfs.openUploadStream(
+                        parseName(files.thumbnail), {
+                        contentType: files.thumbnail.type || 'binary/octet-stream'
+                    })
+
+                    fs.createReadStream(files.thumbnail.path).pipe(thumbnailWriteStream)
+                })
+
+                fs.createReadStream(files.film.path).pipe(filmWriteStream)
+            }
+            await film.save()
+            await filmDetail.save()
+            res.json({ ...film.view(true), ...filmDetail.view() });
+        } catch (err) {
+            console.log(err)
+            next(err)
+        }
+
+    })
+}
 
 const index = async (req, res, next) => {
 
     if (!ObjectId.isValid(req.params.id)) return res.status(400).end();
 
 
-    let film = await Film.findOne({ _id: req.params.id })
+    let film = await Film.findOne({ _id: req.params.id, thumbnail: { $exists: true, $ne: null } })
 
     if (!film) return res.status(404).send({ error: `Film cannot be found!` })
 
@@ -205,7 +208,7 @@ const showThumbnail = async ({ params, query }, res, next) => {
 
 
     let film = await Film
-        .findOne({ _id: params.id });
+        .findOne({ _id: params.id, thumbnail: { $exists: true, $ne: null } });
 
     if (film === null)
         return notFound(res)(null);
@@ -284,17 +287,13 @@ const showThumbnail = async ({ params, query }, res, next) => {
 
 };
 
-let gridfs = null
-mongoose.connection.on('connected', () => {
-    gridfs = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'films' })
-})
 
-const getVideo = (req, res, next) => {
+const getVideo = async (req, res, next) => {
     try {
 
         const FilmGridFs = require('./gridfs');
 
-        FilmGridFs.findById({ _id: req.params.id }, (err, film) => {
+        FilmGridFs.findOne({ _id: req.params.id }, (err, film) => {
             if (err || film === null) return notFound(res)();
 
             const range = req.headers["range"]
@@ -357,11 +356,11 @@ const getAll = ({ query }, res, next) => {
     const limit = parseInt(query.limit) || 10;
     const skip = parseInt(query.skip) || 0;
 
-    let find = {};
+    let find = { thumbnail: { $exists: true, $ne: null } };
 
     if (query.exclude && !ObjectId.isValid(query.exclude)) return res.status(400).end();
 
-    if (query.exclude) find = { _id: { $nin: [query.exclude] } };
+    if (query.exclude) find = { ...find, _id: { $nin: [query.exclude] } };
 
     if (query.search) find = { ...find, title: new RegExp(query.search) }
 
@@ -427,7 +426,7 @@ const partialUpdate = function ({ user, body, params }, res, next) {
 
 
 const view = ({ body, params }, res, next) =>
-    Film.findOneAndUpdate({ _id: params.id }, { $inc: { 'meta.views': 1 } }, { new: true })
+    Film.findOneAndUpdate({ _id: params.id, thumbnail: { $exists: true, $ne: null } }, { $inc: { 'meta.views': 1 } }, { new: true })
         .then(notFound(res))
         .then((film) => film ? film.view(true) : null)
         .then(success(res))
@@ -595,7 +594,7 @@ const search = ({ params, query }, res, next) => {
         }
 
 
-        Film.find({ title: new RegExp("^" + query.search, 'i') }, projection, sort)
+        Film.find({ title: new RegExp("^" + query.search, 'i'), thumbnail: { $exists: true, $ne: null } }, projection, sort)
             .where('createdAt').gte(destDate).lte(currentDate)
             .skip(skip).limit(limit)
             .then(film => film.map(film => film.view(true)))
@@ -604,7 +603,7 @@ const search = ({ params, query }, res, next) => {
 
     } else {
 
-        Film.find({ title: new RegExp("^" + query.search, 'i') }, projection, sort)
+        Film.find({ title: new RegExp("^" + query.search, 'i'), thumbnail: { $exists: true, $ne: null } }, projection, sort)
             .skip(skip).limit(limit)
             .then(films => films.map(film => film.view(true)))
             .then(success(res))
