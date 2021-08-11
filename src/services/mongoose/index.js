@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const {mongo} = require('../../config');
+const { mongo } = require('../../config');
 
 for (const key in mongo.options) {
     mongoose.set(key, mongo.options[key]);

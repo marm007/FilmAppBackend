@@ -1,5 +1,4 @@
 const async = require('async');
-const FSBucket = require('../../services/gridfs');
 const mongoose = require('../../services/mongoose')
 
 const { success, notFound } = require('../../services/response/');
@@ -285,286 +284,70 @@ const showThumbnail = async ({ params, query }, res, next) => {
 
 };
 
-const showFilm1 = (req, res, next) => {
-
-    const {params} = req;
-
-    const FilmGridFs = require('./gridfs');
-
-
-    FilmGridFs.findById({ _id: params.id}, (err, film) => {
-        if (err || film === null) return notFound(res)();
-
-        if (req.headers['range']) {
-
-            console.log("HEAD RANGE");
-            let positions = req.headers['range'].replace(/bytes=/, "").split("-");
-            let start = parseInt(positions[0], 10);
-            let total = film.length;
-            let end = positions[1] ? parseInt(positions[1], 10) : total - 1;
-            let chunksize = (end - start) + 1;
-
-            let maxChunk = 1024 * 1024; // 1MB at a time
-            if (chunksize > maxChunk) {
-                end = start + maxChunk - 1;
-                chunksize = (end - start) + 1;
-            }
-
-            res.writeHead(206, {
-                'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
-                'Accept-Ranges': 'bytes',
-                'Content-Length': chunksize,
-                'Content-Type': film.contentType
-            });
-
-
-            let filmStream = FilmGridFs.read({start: start, end: end, filename: film.filename});
-            filmStream.pipe(res);
-
-        } else {
-            console.log("NORMAl REQUEST");
-            res.header('Content-Type', film.contentType);
-            res.header('Content-Length', film.length);
-            let filmStream = FilmGridFs.read({filename: film.filename});
-            filmStream.pipe(res);
-        }
-    });
-}
-
-const showFilm = async (req, res, next) => {
-    try {
-        const bucket = new FSBucket(mongoose.connection.db, 'films')
-        const FilmGridFs = require('./gridfs');
-        const film = await FilmGridFs.findById(req.params.id)
-        console.log(film)
-        await bucket.streamByMD5(req, res, film)
-    } catch (err) {
-        console.log(err)
-    }
-    {
-        /*  try {
-             const { id } = req.params;
-             const range = req.headers.range;
-     
-             const gfs = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
-                 bucketName: 'films',
-             });
-     
-             console.log(gfs)
-     
-             const FilmGridFs = require('./gridfs');
-             const film = await FilmGridFs.findById(id)
-             const size = film.length
-     
-             if (!film) {
-                 return res.status(404).send({ message: 'Film not found.' });
-             }
-     
-             if (range) {
-                 let [start, end] = range.replace(/bytes=/, "").split("-");
-                 start = parseInt(start, 10);
-                 end = end ? parseInt(end, 10) : size - 1;
-     
-                 if (!isNaN(start) && isNaN(end)) {
-                     start = start;
-                     end = size - 1;
-                 }
-                 if (isNaN(start) && !isNaN(end)) {
-                     start = size - end;
-                     end = size - 1;
-                 }
-     
-                 if (start >= size || end >= size) {
-                     res.writeHead(416, {
-                         "Content-Range": `bytes ${size}`
-                     });
-                     return res.end();
-                 }
-     
-                 res.writeHead(206, {
-                     "Content-Range": `bytes ${start}-${end}/${size}`,
-                     "Accept-Ranges": "bytes",
-                     "Content-Length": end - start + 1,
-                     "Content-Type": film.contentType
-                 });
-     
-                 gfs.openDownloadStreamByName(film.filename, { start: start, end: end }).pipe(res)
-     
-             } else {
-     
-                 res.writeHead(200, {
-                     "Content-Length": size,
-                     "Content-Type": film.contentType
-                 });
-                 gfs.openDownloadStreamByName(film.filename).pipe(res)
-             }
-      */
-        /* 
-                gfs.findOne({ filename: film.filename }, (err, file) => {
-                    console.log('daldla', err)
-                    const { range } = req.headers;
-                    const { length } = file;
-        
-                    const startChunk = Number(
-                        (range || '').replace(/bytes=/, '').split('-')[0],
-                    );
-        
-                    const endChunk = length - 1;
-                    const chunkSize = endChunk - startChunk + 1;
-        
-                    res.set({
-                        'Content-Range': `bytes ${startChunk}-${endChunk}/${length}`,
-                        'Content-Length': chunkSize,
-                        'Content-Type': film.contentType,
-                        'Accept-Ranges': 'bytes',
-                    });
-        
-                    res.status(206);
-        
-                    const podcastReadStream = gfs.createReadStream({
-                        filename: file.filename,
-                        range: {
-                            startPos: startChunk,
-                            endPos: endChunk,
-                        },
-                    });
-        
-                    console.log(file.filename)
-                    console.log(podcastReadStream)
-                    podcastReadStream.on('open', () => podcastReadStream.pipe(res));
-        
-                    podcastReadStream.on('end', () => res.end());
-                }); 
-    } catch (err) {
-        console.log(err)
-        next(err);
-    }*/
-    }
-};
+let gridfs = null
+mongoose.connection.on('connected', () => {
+    gridfs = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'films' })
+})
 
 const getVideo = (req, res, next) => {
+    try {
 
-    const { params } = req;
+        const FilmGridFs = require('./gridfs');
 
-    const FilmGridFs = require('./gridfs');
+        FilmGridFs.findById({ _id: req.params.id }, (err, film) => {
+            if (err || film === null) return notFound(res)();
 
-    FilmGridFs.findById({ _id: params.id }, (err, film) => {
-        if (err || film === null) return notFound(res)();
+            const range = req.headers["range"]
+            if (range && typeof range === "string") {
+                const parts = range.replace(/bytes=/, "").split("-")
+                const partialstart = parts[0]
+                const partialend = parts[1]
 
-        {
-            /* if (req.headers['range']) {
-                console.log('dscd')
-    
-                let positions = req.headers['range'].replace(/bytes=/, "").split("-");
-    
-                let total = film.length;
-                let start = parseInt(positions[0], 10);
-                let end = positions[1] ? parseInt(positions[1], 10) : total - 1;
-    
-                let chunksize = (end - start) + 1;
-    
+                let start = parseInt(partialstart, 10)
+                let end = partialend ? parseInt(partialend, 10) : film.length - 1
+                let chunksize = (end - start) + 1
                 let maxChunk = 1024 * 1024; // 1MB at a time
+
                 if (chunksize > maxChunk) {
                     end = start + maxChunk - 1;
                     chunksize = (end - start) + 1;
                 }
-    
-                if (start >= total || end >= total) {
-                    // Return the 416 Range Not Satisfiable.
-                    res.writeHead(416, {
-                        "Content-Range": `bytes /${total}`
-                    });
-                    return res.end();
-                }
-    
                 res.writeHead(206, {
-                    'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
                     'Accept-Ranges': 'bytes',
                     'Content-Length': chunksize,
+                    'Content-Range': 'bytes ' + start + '-' + end + '/' + film.length,
                     'Content-Type': film.contentType
-                });
-    
-    
-                let filmStream = FilmGridFs.read({ start: start, end: end, filename: film.filename });
-                filmStream.pipe(res);
-    
+                })
+
+                let downloadStream = gridfs.openDownloadStream(film._id, { start, end: end + 1 })
+                downloadStream.pipe(res)
+                downloadStream.on('error', (err) => {
+                    console.log(err)
+                    res.sendStatus(404)
+                })
+                downloadStream.on('end', () => {
+                    res.end()
+                })
             } else {
-                console.log('aldllad')
-                const head = {
-                    'Content-Length': film.length,
-                    'Content-Type': film.contentType
-                }
-                res.writeHead(200, head)
-                let filmStream = FilmGridFs.read({ filename: film.filename });
-                filmStream.pipe(res);
-            } */
-        }
+                res.header('Content-Length', film.length)
+                res.header('Content-Type', film.contentType)
 
-        const size = film.length;
-        const range = req.headers.range;
-
-        if (range) {
-            let [start, end] = range.replace(/bytes=/, "").split("-");
-            start = parseInt(start, 10);
-            end = end ? parseInt(end, 10) : size - 1;
-
-            if (!isNaN(start) && isNaN(end)) {
-                start = start;
-                end = size - 1;
+                let downloadStream = gridfs.openDownloadStream(film._id)
+                downloadStream.pipe(res)
+                downloadStream.on('error', () => {
+                    res.sendStatus(404)
+                })
+                downloadStream.on('end', () => {
+                    res.end()
+                })
             }
-            if (isNaN(start) && !isNaN(end)) {
-                start = size - end;
-                end = size - 1;
-            }
+        })
 
-            const maxChunk = 1024 * 1024;
-            let chunksize = (end - start) + 1;
+    } catch (err) {
+        console.log(err)
+    }
 
-            if (chunksize > maxChunk) {
-                end = start + maxChunk - 1;
-                chunksize = (end - start) + 1;
-            }
-
-            if (start >= size || end >= size) {
-                res.writeHead(416, {
-                    "Content-Range": `bytes */${size}`
-                });
-                return res.end();
-            }
-
-            res.writeHead(206, {
-                "Content-Range": `bytes ${start}-${end}/${size}`,
-                "Accept-Ranges": "bytes",
-                "Content-Length": chunksize,
-                "Content-Type": film.contentType
-            });
-
-            const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'films', chunkSizeBytes: chunksize, });
-            console.log(bucket)
-
-            const downloadStream = bucket.openDownloadStreamByName(film.filename, {
-                start,
-                end
-            });
-            downloadStream.pipe(res);
-
-            // let filmStream = FilmGridFs.read({ start: start, end: end, filename: film.filename });
-            // filmStream.pipe(res);
-
-        } else {
-
-            res.writeHead(200, {
-                "Content-Length": size,
-                "Content-Type": "video/mp4"
-            });
-
-            let filmStream = FilmGridFs.read({ filename: film.filename });
-            filmStream.pipe(res);
-
-        }
-    });
-
-};
+}
 
 const getAll = ({ query }, res, next) => {
 
@@ -832,8 +615,6 @@ module.exports = {
     index,
     getAll,
     getVideo,
-    showFilm,
-    showFilm1,
     showThumbnail,
     update,
     partialUpdate,

@@ -1,7 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const mime = require('mime-types');
-const {GridFsStorage} = require('multer-gridfs-storage');
+const { GridFsStorage } = require('multer-gridfs-storage');
 
 const config = require('../../config');
 
@@ -21,7 +21,6 @@ const storage = new GridFsStorage({
     }
 });
 
-
 function fileFilter(req, file, done) {
 
     if (file.fieldname === 'film' && (file.mimetype === mime.types.mp4 || file.mimetype === mime.types.ogg)) {
@@ -32,8 +31,8 @@ function fileFilter(req, file, done) {
     done(new Error(`File type: ${file.mimetype} for field ${file.fieldname} is not allowed!`))
 }
 
-const uploadDrive = multer({storage: storage, fileFilter: fileFilter}).fields([{name: 'film', maxCount: 1},
-    {name: 'thumbnail', maxCount: 1}
+const uploadDrive = multer({ storage: storage, fileFilter: fileFilter }).fields([{ name: 'film', maxCount: 1 },
+{ name: 'thumbnail', maxCount: 1 }
 ]);
 
 module.exports = uploadDrive;
