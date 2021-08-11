@@ -299,7 +299,7 @@ const getVideo = (req, res, next) => {
 
             const range = req.headers["range"]
             let contentType = film.contentType
-            if (contentType.includes('audio')) contentType.replace('audio', 'video')
+            if (contentType.includes('audio')) contentType = contentType.replace('audio', 'video')
 
             if (range && typeof range === "string") {
                 const parts = range.replace(/bytes=/, "").split("-")
