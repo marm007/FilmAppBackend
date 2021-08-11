@@ -298,6 +298,9 @@ const getVideo = (req, res, next) => {
             if (err || film === null) return notFound(res)();
 
             const range = req.headers["range"]
+            let contentType = film.contentType
+            if (contentType.includes('audio')) contentType.replace('audio', 'video')
+
             if (range && typeof range === "string") {
                 const parts = range.replace(/bytes=/, "").split("-")
                 const partialstart = parts[0]
@@ -316,7 +319,7 @@ const getVideo = (req, res, next) => {
                     'Accept-Ranges': 'bytes',
                     'Content-Length': chunksize,
                     'Content-Range': 'bytes ' + start + '-' + end + '/' + film.length,
-                    'Content-Type': film.contentType
+                    'Content-Type': contentType
                 })
 
                 let downloadStream = gridfs.openDownloadStream(film._id, { start, end: end + 1 })
@@ -330,7 +333,7 @@ const getVideo = (req, res, next) => {
                 })
             } else {
                 res.header('Content-Length', film.length)
-                res.header('Content-Type', film.contentType)
+                res.header('Content-Type', contentType)
 
                 let downloadStream = gridfs.openDownloadStream(film._id)
                 downloadStream.pipe(res)
