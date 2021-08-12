@@ -269,6 +269,7 @@ const showThumbnail = async ({ params, query }, res, next) => {
                     .then(async data => {
                         console.log(await FileType.fromBuffer(data))
                         res.set('Content-Length', data.length);
+                        res.set('Cache-Control', 'max-age=604800');
                         res.set('Content-Type', thumbnail.contentType);
                         res.write(data);
                         res.end();
@@ -280,6 +281,7 @@ const showThumbnail = async ({ params, query }, res, next) => {
             });
         } else {
             res.set('Content-Length', thumbnail.length);
+            res.set('Cache-Control', 'max-age=604800');
             res.set('Content-Type', thumbnail.contentType);
             stream.pipe(res);
         }
