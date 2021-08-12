@@ -76,8 +76,8 @@ const create = (req, res, next) => {
                 filmWriteStream.once('finish', async function () {
 
                     const webpBuffer = await sharp(files.thumbnail.path)
-                        .resize(500, Math.round(500 * 9 / 16))
-                        .webp({ reductionEffort: 6, quality: 20 })
+                        .resize(250, Math.round(250 * 9 / 16))
+                        .webp({ reductionEffort: 6, quality: 50 })
                         .toBuffer();
 
                     const smallBuffer = await sharp(files.thumbnail.path)
