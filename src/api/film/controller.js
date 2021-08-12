@@ -72,23 +72,19 @@ const create = (req, res, next) => {
                     }
                 })
 
-                const previewBuffer = await sharp(files.thumbnail.path)
-                    .resize(25, Math.round(25 * 9 / 16))
-                    .toBuffer();
+                filmWriteStream.once('finish', async function () {
 
-                const smallBuffer = await sharp(files.thumbnail.path)
-                    .resize(250, Math.round(250 * 9 / 16))
-                    .toBuffer();
+                    const previewBuffer = await sharp(files.thumbnail.path)
+                        .resize(25, Math.round(25 * 9 / 16))
+                        .toBuffer();
 
-                const posterBuffer = await sharp(files.thumbnail.path)
-                    .resize(500, Math.round(500 * 9 / 16))
-                    .toBuffer();
+                    const smallBuffer = await sharp(files.thumbnail.path)
+                        .resize(250, Math.round(250 * 9 / 16))
+                        .toBuffer();
 
-                if (!previewBuffer || !smallBuffer || !posterBuffer) {
-                    return res.status(400).send({ error: 'Bad request!' })
-                }
-
-                filmWriteStream.once('finish', function () {
+                    const posterBuffer = await sharp(files.thumbnail.path)
+                        .resize(500, Math.round(500 * 9 / 16))
+                        .toBuffer();
 
                     let stream = require('stream');
                     const ThumbnailGridFs = require('../thumbnail/gridfs');

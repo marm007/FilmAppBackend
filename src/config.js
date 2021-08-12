@@ -27,7 +27,7 @@ const config = {
     },
     test: {
         mongo: {
-            uri: 'mongodb+srv://TestUser:435DkTppNBfoWEmm@filmappcluset-tuxyg.mongodb.net/filmapp-test?retryWrites=true',
+            uri: 'mongodb+srv://TestUser:q0g9Kgl2au0rDMrq@filmappcluster.xui6k.mongodb.net/filmapp-test?retryWrites=true&w=majority',
             options: {
                 debug: true,
             }
@@ -36,7 +36,7 @@ const config = {
     },
     development: {
         mongo: {
-            uri: 'mongodb+srv://DevUser:QL6DNcQ7G90R1FkO@filmappcluset-tuxyg.mongodb.net/filmapp-dev?retryWrites=true',
+            uri: 'mongodb+srv://DevUser:7mVy2kDhFjN4ox48@filmappcluster.xui6k.mongodb.net/filmapp-dev?retryWrites=true&w=majority',
             options: {
                 debug: true,
             }
