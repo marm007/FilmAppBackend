@@ -12,6 +12,7 @@ const Comment = require('../comment/model').model;
 const ObjectId = require('mongoose').Types.ObjectId;
 
 const sharp = require('sharp');
+const FileType = require('file-type');
 
 const formidable = require('formidable');
 const fs = require('fs')
@@ -38,8 +39,8 @@ const unlinkGridFs = async (film_id, ...thumbnailIds) => {
 const path = require('path');
 const mime = require('mime-types')
 
-const parseName = (file, name = '') => {
-    return path.parse(file.name).name + Date.now() + name + '.' + mime.extension(file.type)
+const parseName = (file, name = '', ext = null) => {
+    return path.parse(file.name).name + Date.now() + name + '.' + (ext ? ext : mime.extension(file.type))
 }
 
 const create = (req, res, next) => {
@@ -74,8 +75,9 @@ const create = (req, res, next) => {
 
                 filmWriteStream.once('finish', async function () {
 
-                    const previewBuffer = await sharp(files.thumbnail.path)
-                        .resize(25, Math.round(25 * 9 / 16))
+                    const webpBuffer = await sharp(files.thumbnail.path)
+                        .resize(500, Math.round(500 * 9 / 16))
+                        .webp({ reductionEffort: 6, quality: 20 })
                         .toBuffer();
 
                     const smallBuffer = await sharp(files.thumbnail.path)
@@ -85,6 +87,8 @@ const create = (req, res, next) => {
                     const posterBuffer = await sharp(files.thumbnail.path)
                         .resize(500, Math.round(500 * 9 / 16))
                         .toBuffer();
+
+                    const webpBufferType = await FileType.fromBuffer(webpBuffer)
 
                     let stream = require('stream');
                     const ThumbnailGridFs = require('../thumbnail/gridfs');
@@ -110,12 +114,12 @@ const create = (req, res, next) => {
                         },
                         function (done) {
                             let bufferStream = new stream.PassThrough();
-                            bufferStream.end(previewBuffer);
+                            bufferStream.end(webpBuffer);
                             ThumbnailGridFs.write({
-                                filename: parseName(files.thumbnail, '_preview'),
-                                contentType: files.thumbnail.type
+                                filename: parseName(files.thumbnail, '_small_webp', webpBufferType.ext),
+                                contentType: webpBufferType.mime,
                             }, bufferStream, (error, file) => {
-                                thumbnailBody.preview = file._id;
+                                thumbnailBody.small_webp = file._id;
                                 done(error)
                             })
                         },
@@ -231,14 +235,13 @@ const showThumbnail = async ({ params, query }, res, next) => {
         thumbnailId = film.thumbnail.small;
     }
 
+    if (query.width && query.width === 'small_webp') {
+        thumbnailId = film.thumbnail.small_webp;
+    }
+
     if (query.width && query.width === 'poster') {
         thumbnailId = film.thumbnail.poster;
     }
-
-    if (query.width && query.width === 'preview') {
-        thumbnailId = film.thumbnail.preview;
-    }
-
 
     await ThumbnailGridFs.findById({ _id: ObjectId(thumbnailId) }, (err, thumbnail) => {
 
@@ -249,7 +252,7 @@ const showThumbnail = async ({ params, query }, res, next) => {
 
         let stream = thumbnail.read();
 
-        if (query.width && query.width !== 'small' && query.width !== 'poster' && query.width !== 'preview') {
+        if (query.width && query.width !== 'small' && query.width !== 'poster' && query.width !== 'small_webp') {
             let buffer = [];
 
             stream.on('data', function (chunk) {
@@ -261,8 +264,10 @@ const showThumbnail = async ({ params, query }, res, next) => {
                 let all = new Buffer.concat(buffer);
                 await sharp(all)
                     .resize(width, height)
+                    .webp()
                     .toBuffer()
-                    .then(data => {
+                    .then(async data => {
+                        console.log(await FileType.fromBuffer(data))
                         res.set('Content-Length', data.length);
                         res.set('Content-Type', thumbnail.contentType);
                         res.write(data);
@@ -514,7 +519,7 @@ const destroy = async (req, res, next) => {
 
         await Comment.deleteMany({ _id: { $in: film.comments } }).session(session);
 
-        await unlinkGridFs(film_id, film.thumbnail.id, film.thumbnail.small, film.thumbnail.poster, film.thumbnail.preview)
+        await unlinkGridFs(film_id, film.thumbnail.id, film.thumbnail.small, film.thumbnail.poster, film.thumbnail.small_webp)
 
         await session.commitTransaction()
         session.endSession()

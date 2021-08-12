@@ -5,13 +5,12 @@ const thumbnailSchema = new Schema({
     small: {
         type: Schema.ObjectId
     },
-    poster: {
+    small_webp: {
         type: Schema.ObjectId
     },
-    preview: {
+    poster: {
         type: Schema.ObjectId
     }
-
 });
 
 
@@ -20,8 +19,8 @@ thumbnailSchema.methods = {
         return {
             id: this._id,
             small: this.small,
-            poster: this.poster,
-            preview: this.poster,
+            small_webp: this.small_webp,
+            poster: this.poster
         };
     }
 };
