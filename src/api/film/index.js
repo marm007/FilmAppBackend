@@ -10,8 +10,7 @@ const {
     view,
     like,
     destroy,
-    search,
-    convert
+    search
 }
     = require('./controller');
 
@@ -31,9 +30,6 @@ router.get('/',
 
 router.get('/search',
     search);
-
-router.get('/convert',
-    convert)
 
 router.get('/:id',
     index);

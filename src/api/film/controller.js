@@ -88,6 +88,15 @@ const create = (req, res, next) => {
                         .resize(500, Math.round(500 * 9 / 16))
                         .toBuffer();
 
+                    const previewBuffer = await sharp(files.thumbnail.path)
+                        .resize(25, Math.round(25 * 9 / 16))
+                        .toBuffer();
+
+                    const previewBufferWebp = await sharp(files.thumbnail.path)
+                        .resize(25, Math.round(25 * 9 / 16))
+                        .webp({ reductionEffort: 6, quality: 50 })
+                        .toBuffer();
+
                     const webpBufferType = await FileType.fromBuffer(webpBuffer)
 
                     let stream = require('stream');
@@ -146,24 +155,44 @@ const create = (req, res, next) => {
                                 thumbnailBody.poster = file._id;
                                 done(error)
                             })
+                        },
+                        function (done) {
+                            let bufferStream = new stream.PassThrough();
+                            bufferStream.end(previewBuffer);
+
+                            ThumbnailGridFs.write({
+                                filename: parseName(files.thumbnail, '_preview'),
+                                contentType: files.thumbnail.type
+                            }, bufferStream, (error, file) => {
+                                thumbnailBody.preview = file._id;
+                                done(error)
+                            })
+                        },
+                        function (done) {
+                            let bufferStream = new stream.PassThrough();
+                            bufferStream.end(previewBufferWebp);
+
+                            ThumbnailGridFs.write({
+                                filename: parseName(files.thumbnail, '_preview_webp', webpBufferType.ext),
+                                contentType: webpBufferType.mime
+                            }, bufferStream, (error, file) => {
+                                thumbnailBody.preview_webp = file._id;
+                                done(error)
+                            })
                         }
                     ], async function (err) {
 
                         if (err) {
-                            let message = err.message ? err.message : 'Something went wrong!';
-                            //await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
+                            let message = err.message ? err.message : { 'error': 'Something went wrong!' };
+                            await unlinkGridFs(req.files.film[0].id,
+                                thumbnailBody._id, thumbnailBody.poster,
+                                thumbnailBody.preview, thumbnailBody.preview_webp,
+                                thumbnailBody.small, thumbnailBody.small_webp);
+                            return res.status(400).json(message)
                         }
-
                         film.thumbnail = thumbnailBody
                         await film.save()
                     })
-
-                    let thumbnailWriteStream = thumbnailGridfs.openUploadStream(
-                        parseName(files.thumbnail), {
-                        contentType: files.thumbnail.type || 'binary/octet-stream'
-                    })
-
-                    fs.createReadStream(files.thumbnail.path).pipe(thumbnailWriteStream)
                 })
 
                 fs.createReadStream(files.film.path).pipe(filmWriteStream)
@@ -172,7 +201,6 @@ const create = (req, res, next) => {
             await filmDetail.save()
             res.json({ ...film.view(true), ...filmDetail.view() });
         } catch (err) {
-            console.log(err)
             next(err)
         }
 
@@ -202,84 +230,6 @@ const index = async (req, res, next) => {
     return res.status(200).send({ ...film.view(true), ...filmDetails })
 };
 
-const convert = async ({ params }, res, next) => {
-    const ThumbnailGridFs = require('../thumbnail/gridfs');
-
-    let films = await Film.find({ 'thumbnail.poster_webp': { $exists: false, $eq: null } })
-
-    for (let film of films) {
-        await ThumbnailGridFs.findById({ _id: ObjectId(film.thumbnail._id) }, (err, thumbnail) => {
-            console.log(thumbnail)
-
-            let stream = thumbnail.read();
-
-            let buffer = [];
-
-            stream.on('data', function (chunk) {
-                buffer.push(chunk);
-
-            });
-
-            stream.on('end', async function () {
-                let all = new Buffer.concat(buffer);
-
-                const preview = await sharp(all)
-                    .resize(25, Math.round(25 * 9 / 16))
-                    .toBuffer();
-
-                const previewWebp = await sharp(all)
-                    .resize(25, Math.round(25 * 9 / 16))
-                    .webp({ reductionEffort: 6, quality: 50 })
-                    .toBuffer();
-
-
-                const webpBufferType = await FileType.fromBuffer(previewWebp)
-                const bufferType = await FileType.fromBuffer(preview)
-                const fileName = thumbnail.metadata.originalname.split('.').slice(0, -1).join('.')
-
-                let stream = require('stream');
-
-                let thumbnailBody = {}
-
-                async.waterfall([
-                    function (done) {
-                        let bufferStream = new stream.PassThrough();
-                        bufferStream.end(preview);
-
-                        ThumbnailGridFs.write({
-                            filename: fileName + '_preview' + bufferType.ext,
-                            contentType: bufferType.mime,
-                        }, bufferStream, (error, file) => {
-                            console.log(error)
-                            thumbnailBody.preview = file._id;
-                            done(error)
-                        })
-                    },
-                    function (done) {
-                        let bufferStream = new stream.PassThrough();
-                        bufferStream.end(previewWebp);
-
-                        ThumbnailGridFs.write({
-                            filename: fileName + '_preview_webp.' + webpBufferType.ext,
-                            contentType: webpBufferType.mime,
-                        }, bufferStream, (error, file) => {
-                            thumbnailBody.preview_webp = file._id;
-                            done(error)
-                        })
-                    },
-                ], async function (err) {
-                    if (err) {
-                        consol.log('error', err)
-                    } else {
-                        await Film.findOneAndUpdate({ _id: film._id }, { 'thumbnail.preview': thumbnailBody.preview, 'thumbnail.preview_webp': thumbnailBody.preview_webp })
-                    }
-                })
-            })
-        });
-    }
-
-}
-
 const showThumbnail = async ({ params, query }, res, next) => {
     const ThumbnailGridFs = require('../thumbnail/gridfs');
 
@@ -305,64 +255,54 @@ const showThumbnail = async ({ params, query }, res, next) => {
     if (Number.isNaN(parseInt(query.width))) {
         const id = film.thumbnail[query.width]
         thumbnailId = id ? id : thumbnailId
+
+        const thumb = await ThumbnailGridFs.findById(ObjectId(thumbnailId))
+
+        res.set('Content-Length', thumb.length)
+        res.set('Cache-Control', 'max-age=604800');
+        res.set('Content-Type', thumb.contentType);
+
+        return thumbnailGridfs.openDownloadStream(ObjectId(thumbnailId)).pipe(res)
     } else {
         width = parseInt(query.width);
         height = Math.round(width / ratio);
+
+        await ThumbnailGridFs.findById({ _id: ObjectId(thumbnailId) }, (err, thumbnail) => {
+
+
+            if (err || thumbnail === null)
+                return notFound(res)();
+
+
+            let stream = thumbnail.read();
+
+            let buffer = [];
+
+            stream.on('data', function (chunk) {
+                buffer.push(chunk);
+
+            });
+
+            stream.on('end', async function () {
+                let all = new Buffer.concat(buffer);
+                await sharp(all)
+                    .resize(width, height)
+                    .webp()
+                    .toBuffer()
+                    .then(async data => {
+                        res.set('Content-Length', data.length);
+                        res.set('Cache-Control', 'max-age=604800');
+                        res.set('Content-Type', 'image/webp');
+                        res.write(data);
+                        res.end();
+                    })
+                    .catch(err => {
+                        next(err)
+                    });
+            });
+        })
     }
-
-    const thumb = await ThumbnailGridFs.findById(ObjectId(thumbnailId))
-
-    res.set('Content-Length', thumb.length)
-    res.set('Cache-Control', 'max-age=604800');
-    res.set('Content-Type', thumb.contentType);
-
-    return thumbnailGridfs.openDownloadStream(ObjectId(thumbnailId)).pipe(res)
-
-    /*   await ThumbnailGridFs.findById({ _id: ObjectId(thumbnailId) }, (err, thumbnail) => {
-  
-  
-          if (err || thumbnail === null)
-              return notFound(res)();
-  
-  
-          let stream = thumbnail.read();
-  
-          if (query.width && query.width !== 'small' && query.width !== 'poster' && query.width !== 'small_webp') {
-              let buffer = [];
-  
-              stream.on('data', function (chunk) {
-                  buffer.push(chunk);
-  
-              });
-  
-              stream.on('end', async function () {
-                  let all = new Buffer.concat(buffer);
-                  await sharp(all)
-                      .resize(width, height)
-                      .webp()
-                      .toBuffer()
-                      .then(async data => {
-                          res.set('Content-Length', data.length);
-                          res.set('Cache-Control', 'max-age=604800');
-                          res.set('Content-Type', await FileType.fromBuffer(data));
-                          res.write(data);
-                          res.end();
-                      })
-                      .catch(err => {
-                          console.log(err)
-                      });
-              });
-          } else {
-              res.set('Content-Length', thumbnail.length);
-              res.set('Cache-Control', 'max-age=604800');
-              res.set('Content-Type', thumbnail.contentType);
-              stream.pipe(res);
-          }
-  
-      }); */
-
 };
-
 
 const getVideo = async (req, res, next) => {
     try {
@@ -400,7 +340,6 @@ const getVideo = async (req, res, next) => {
                 let downloadStream = gridfs.openDownloadStream(film._id, { start, end: end + 1 })
                 downloadStream.pipe(res)
                 downloadStream.on('error', (err) => {
-                    console.log(err)
                     res.sendStatus(404)
                 })
                 downloadStream.on('end', () => {
@@ -422,7 +361,7 @@ const getVideo = async (req, res, next) => {
         })
 
     } catch (err) {
-        console.log(err)
+        next(err)
     }
 
 }
@@ -594,7 +533,9 @@ const destroy = async (req, res, next) => {
 
         await Comment.deleteMany({ _id: { $in: film.comments } }).session(session);
 
-        await unlinkGridFs(film_id, film.thumbnail.id, film.thumbnail.small, film.thumbnail.poster, film.thumbnail.small_webp)
+        await unlinkGridFs(film_id, film.thumbnail._id, film.thumbnail.small,
+            film.thumbnail.poster, film.thumbnail.small_webp,
+            film.thumbnail.preview, film.thumbnail.preview_webp)
 
         await session.commitTransaction()
         session.endSession()
@@ -699,6 +640,5 @@ module.exports = {
     destroy,
     search,
     view,
-    like,
-    convert
+    like
 };
