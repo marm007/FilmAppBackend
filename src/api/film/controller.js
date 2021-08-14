@@ -232,10 +232,6 @@ const convert = async ({ params }, res, next) => {
                     .webp({ reductionEffort: 6, quality: 50 })
                     .toBuffer();
 
-                const posterWebp = await sharp(all)
-                    .resize(500, Math.round(500 * 9 / 16))
-                    .webp()
-                    .toBuffer();
 
                 const webpBufferType = await FileType.fromBuffer(previewWebp)
                 const bufferType = await FileType.fromBuffer(preview)
@@ -249,10 +245,12 @@ const convert = async ({ params }, res, next) => {
                     function (done) {
                         let bufferStream = new stream.PassThrough();
                         bufferStream.end(preview);
+
                         ThumbnailGridFs.write({
                             filename: fileName + '_preview' + bufferType.ext,
                             contentType: bufferType.mime,
                         }, bufferStream, (error, file) => {
+                            console.log(error)
                             thumbnailBody.preview = file._id;
                             done(error)
                         })
@@ -262,35 +260,19 @@ const convert = async ({ params }, res, next) => {
                         bufferStream.end(previewWebp);
 
                         ThumbnailGridFs.write({
-                            filename: fileName + '_preview_webp' + webpBufferType.ext,
+                            filename: fileName + '_preview_webp.' + webpBufferType.ext,
                             contentType: webpBufferType.mime,
                         }, bufferStream, (error, file) => {
                             thumbnailBody.preview_webp = file._id;
                             done(error)
                         })
                     },
-                    function (done) {
-                        let bufferStream = new stream.PassThrough();
-                        bufferStream.end(posterWebp);
-
-                        ThumbnailGridFs.write({
-                            filename: fileName + '_poster_webp' + webpBufferType.ext,
-                            contentType: webpBufferType.mime
-                        }, bufferStream, (error, file) => {
-                            thumbnailBody.poster_webp = file._id;
-                            done(error)
-                        })
-                    }
                 ], async function (err) {
-
                     if (err) {
-                        let message = err.message ? err.message : 'Something went wrong!';
-                        //await unlinkGridFs(req.files.film[0].id, thumbnailBody._id, thumbnailBody.poster, thumbnailBody.preview, thumbnailBody.small);
+                        consol.log('error', err)
+                    } else {
+                        await Film.findOneAndUpdate({ _id: film._id }, { 'thumbnail.preview': thumbnailBody.preview, 'thumbnail.preview_webp': thumbnailBody.preview_webp })
                     }
-
-                    film.thumbnail = { ...film.thumbnail, ...thumbnailBody }
-
-                    await film.save()
                 })
             })
         });
