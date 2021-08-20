@@ -16,6 +16,9 @@ const thumbnailSchema = new Schema({
     },
     poster: {
         type: Schema.ObjectId
+    },
+    poster_webp: {
+        type: Schema.ObjectId
     }
 });
 
@@ -28,7 +31,8 @@ thumbnailSchema.methods = {
             small_webp: this.small_webp,
             preview: this.preview,
             preview_webp: this.preview_webp,
-            poster: this.poster
+            poster: this.poster,
+            poster_webp: this.poster_webp
         };
     }
 };

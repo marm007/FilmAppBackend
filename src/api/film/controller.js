@@ -77,7 +77,7 @@ const create = (req, res, next) => {
 
                     const webpBuffer = await sharp(files.thumbnail.path)
                         .resize(250, Math.round(250 * 9 / 16))
-                        .webp({ reductionEffort: 6, quality: 50 })
+                        .webp({ reductionEffort: 6, quality: 80 })
                         .toBuffer();
 
                     const smallBuffer = await sharp(files.thumbnail.path)
@@ -86,6 +86,11 @@ const create = (req, res, next) => {
 
                     const posterBuffer = await sharp(files.thumbnail.path)
                         .resize(500, Math.round(500 * 9 / 16))
+                        .toBuffer();
+
+                    const posterWebp = await sharp(all)
+                        .resize(500, Math.round(500 * 9 / 16))
+                        .webp({ reductionEffort: 6, quality: 80 })
                         .toBuffer();
 
                     const previewBuffer = await sharp(files.thumbnail.path)
@@ -158,6 +163,18 @@ const create = (req, res, next) => {
                         },
                         function (done) {
                             let bufferStream = new stream.PassThrough();
+                            bufferStream.end(posterWebp);
+
+                            ThumbnailGridFs.write({
+                                filename: parseName(files.thumbnail, '_poster_webp', webpBufferType.ext),
+                                contentType: webpBufferType.mime,
+                            }, bufferStream, (error, file) => {
+                                thumbnailBody.poster_webp = file._id;
+                                done(error)
+                            })
+                        },
+                        function (done) {
+                            let bufferStream = new stream.PassThrough();
                             bufferStream.end(previewBuffer);
 
                             ThumbnailGridFs.write({
@@ -185,7 +202,7 @@ const create = (req, res, next) => {
                         if (err) {
                             let message = err.message ? err.message : { 'error': 'Something went wrong!' };
                             await unlinkGridFs(req.files.film[0].id,
-                                thumbnailBody._id, thumbnailBody.poster,
+                                thumbnailBody._id, thumbnailBody.poster, thumbnailBody.poster_webp,
                                 thumbnailBody.preview, thumbnailBody.preview_webp,
                                 thumbnailBody.small, thumbnailBody.small_webp);
                             return res.status(400).json(message)
@@ -411,8 +428,6 @@ const update = function ({ user, body, params }, res, next) {
 
 };
 
-
-
 const partialUpdate = function ({ user, body, params }, res, next) {
 
     if (!Object.keys(body).length)
@@ -438,16 +453,12 @@ const partialUpdate = function ({ user, body, params }, res, next) {
         .catch(next);
 };
 
-
-
 const view = ({ body, params }, res, next) =>
     Film.findOneAndUpdate({ _id: params.id, thumbnail: { $exists: true, $ne: null } }, { $inc: { 'meta.views': 1 } }, { new: true })
         .then(notFound(res))
         .then((film) => film ? film.view(true) : null)
         .then(success(res))
         .catch(next);
-
-
 
 const like = async (req, res, next) => {
 
@@ -549,7 +560,6 @@ const destroy = async (req, res, next) => {
 
 };
 
-
 const search = ({ params, query }, res, next) => {
 
     const limit = parseInt(query.limit) || 10;
@@ -627,7 +637,6 @@ const search = ({ params, query }, res, next) => {
             .catch(next);
     }
 };
-
 
 module.exports = {
     create,
