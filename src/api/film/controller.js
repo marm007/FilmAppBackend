@@ -564,6 +564,11 @@ const search = ({ params, query }, res, next) => {
 
     const limit = parseInt(query.limit) || 10;
     const skip = parseInt(query.skip) || 0;
+    console.log('serach', 'asdlldsal')
+    
+    const titleToSearch = String(query.search).replace(/\./g, '\\.')
+    console.log('serach', 'ladldalda')
+    console.log('serach', titleToSearch)
 
     let sort = {};
 
@@ -620,8 +625,7 @@ const search = ({ params, query }, res, next) => {
             destDate.setDate(currentDate.getMonth() + distance + 2);
         }
 
-
-        Film.find({ title: new RegExp("^" + query.search, 'i'), thumbnail: { $exists: true, $ne: null } }, projection, sort)
+        Film.find({ title: new RegExp("^" + titleToSearch, 'i'), thumbnail: { $exists: true, $ne: null } }, projection, sort)
             .where('createdAt').gte(destDate).lte(currentDate)
             .skip(skip).limit(limit)
             .then(film => film.map(film => film.view(true)))
@@ -630,7 +634,7 @@ const search = ({ params, query }, res, next) => {
 
     } else {
 
-        Film.find({ title: new RegExp("^" + query.search, 'i'), thumbnail: { $exists: true, $ne: null } }, projection, sort)
+        Film.find({ title: new RegExp("^" + titleToSearch, 'i'), thumbnail: { $exists: true, $ne: null } }, projection, sort)
             .skip(skip).limit(limit)
             .then(films => films.map(film => film.view(true)))
             .then(success(res))
