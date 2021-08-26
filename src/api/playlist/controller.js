@@ -68,7 +68,7 @@ const index = async ({ params, user, query }, res, next) => {
 
             let playlistPopulated = await playlist
                 .populate({
-                    path: 'films_id', select: '_id author_name title thumbnail', options: {
+                    path: 'films_id',  options: {
                         retainNullValues: true
                     }
                 })

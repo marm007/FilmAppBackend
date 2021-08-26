@@ -228,24 +228,41 @@ const index = async (req, res, next) => {
 
     if (!ObjectId.isValid(req.params.id)) return res.status(400).end();
 
+    const showDetails = req.query.details
 
     let film = await Film.findOne({ _id: req.params.id, thumbnail: { $exists: true, $ne: null } })
 
     if (!film) return res.status(404).send({ error: `Film cannot be found!` })
+    let toReturn = { ...film.view(true) }
 
+    if (showDetails) {
+        let filmDetails = await FilmDetail.findOne({ film_id: film.id })
+            .then(details => {
+                if (!details) return details
+                let comments = details.comments.map(comment => comment.view())
+                return { comments: comments, comments_count: details.comments_count }
+            })
 
-    let filmDetails = await FilmDetail.findOne({ film_id: film.id })
+        if (!filmDetails) return res.status(404)
+            .send({ error: `FilmDetails cannot be found!` })
+
+        toReturn = { ...toReturn, ...filmDetails }
+    }
+
+    return res.status(200).send(toReturn)
+};
+
+const indexDetails = (req, res, next) =>
+    FilmDetail.findOne({ film_id: req.params.id })
+        .then(notFound(res))
+        .then(details => details ? details.view() : null)
         .then(details => {
             if (!details) return details
-            let comments = details.comments.map(comment => comment.view())
-            return { comments: comments, comments_count: details.comments_count }
+            details.comments = details.comments.map(comment => comment.view())
+            return details
         })
-
-    if (!filmDetails) return res.status(404)
-        .send({ error: `FilmDetails cannot be found!` })
-
-    return res.status(200).send({ ...film.view(true), ...filmDetails })
-};
+        .then(success(res))
+        .catch(next)
 
 const showThumbnail = async ({ params, query }, res, next) => {
     const ThumbnailGridFs = require('../thumbnail/gridfs');
@@ -404,53 +421,54 @@ const getAll = ({ query }, res, next) => {
         .catch(next);
 };
 
-const update = function ({ user, body, params }, res, next) {
+const update = async function ({ user, body, params }, res, next) {
 
-    if (!Object.keys(body).length || !body.title || !body.description)
-        return res.status(400).send({ error: 'Please provide title and description to perform a full film update!' })
+    try {
+        if (!Object.keys(body).length || !body.title || !body.description)
+            return res.status(400).send({ error: 'Please provide title and description to perform a full film update!' })
 
+        let film = await Film.findById(params.id)
 
-    let filmBody = { title: body.title, description: body.description }
+        if (!film) return notFound(res)(null)
 
-    let details = filmDetail.findOne({ film_id: film_id })
+        if (!(user.role === 'admin' || user._id.equals(film.author_id)))
+            return res.status(403).end()
 
-    if (!details) return notFound(res)(null)
+        if (body.title) film.title = body.title
+        if (body.description) film.description = body.description
 
-    if (!(user.role === 'admin' || user._id.equals(details.author_id)))
-        return res.status(403).end()
+        await film.save()
 
-    Film.findById(params.id)
-        .then(notFound(res))
-        .then((film) => film ? Object.assign(film, filmBody).save() : null)
-        .then((film) => film ? film.view(true) : null)
-        .then(success(res))
-        .catch(next);
-
+        return success(res)(film.view(true))
+    }
+    catch (err) {
+        return next(err)
+    }
 };
 
-const partialUpdate = function ({ user, body, params }, res, next) {
+const partialUpdate = async function ({ user, body, params }, res, next) {
 
-    if (!Object.keys(body).length)
-        return res.status(400).send({ error: 'Please provide title or description to perform a partial film update!' })
+    try {
+        if (!Object.keys(body).length)
+            return res.status(400).send({ error: 'Please provide title or description to perform a partial film update!' })
 
-    let filmBody = {}
+        let film = await Film.findById(params.id)
 
-    if (body.title) filmBody = { ...filmBody, title: body.title }
-    if (body.description) filmBody = { ...filmBody, description: body.description }
+        if (!film) return notFound(res)(null)
 
-    let details = filmDetail.findOne({ film_id: film_id })
+        if (!(user.role === 'admin' || user._id.equals(film.author_id)))
+            return res.status(403).end()
 
-    if (!details) return notFound(res)(null)
+        if (body.title) film.title = body.title
+        if (body.description) film.description = body.description
 
-    if (!(user.role === 'admin' || user._id.equals(details.author_id)))
-        return res.status(403).end()
+        await film.save()
 
-    Film.findById(params.id)
-        .then(notFound(res))
-        .then((film) => film ? Object.assign(film, filmBody).save() : null)
-        .then((film) => film ? film.view(true) : null)
-        .then(success(res))
-        .catch(next);
+        return success(res)(film.view(true))
+    }
+    catch (err) {
+        return next(err)
+    }
 };
 
 const view = ({ body, params }, res, next) =>
@@ -564,11 +582,8 @@ const search = ({ params, query }, res, next) => {
 
     const limit = parseInt(query.limit) || 10;
     const skip = parseInt(query.skip) || 0;
-    console.log('serach', 'asdlldsal')
-    
+
     const titleToSearch = String(query.search).replace(/\./g, '\\.')
-    console.log('serach', 'ladldalda')
-    console.log('serach', titleToSearch)
 
     let sort = {};
 
@@ -645,6 +660,7 @@ const search = ({ params, query }, res, next) => {
 module.exports = {
     create,
     index,
+    indexDetails,
     getAll,
     getVideo,
     showThumbnail,

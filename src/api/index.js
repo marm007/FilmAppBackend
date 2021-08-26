@@ -22,7 +22,7 @@ router.use(function(req, res, next) {
 
 
 router.use(function(err, req, res, next) {
-
+    console.log(err)
     if (err.name === 'ValidationError') {
         const errors = _.map(err.errors, function(v) {
             return v.message;

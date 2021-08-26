@@ -2,6 +2,7 @@ const { Router } = require('express');
 const {
     create,
     index,
+    indexDetails,
     getAll,
     getVideo,
     showThumbnail,
@@ -33,6 +34,9 @@ router.get('/search',
 
 router.get('/:id',
     index);
+
+router.get('/:id/details',
+    indexDetails)
 
 router.get('/:id/video',
     getVideo);
