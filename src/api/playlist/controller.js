@@ -5,7 +5,6 @@ const { success, notFound } = require('../../services/response/');
 const catchFilmNonExists = require('./helper').catchFilmNonExists;
 
 const Playlist = require('./model').model;
-const Film = require('../film/model').model;
 
 const create = async ({ user, body }, res, next) => {
     const session = await mongoose.startSession()
@@ -51,40 +50,26 @@ const index = async ({ params, user, query }, res, next) => {
             return res.status(403).end()
         }
 
-        if (query.reload) {
-            let playlistPopulated = await playlist
-                .populate({ path: 'films_id', $exists: true, select: 'thumbnail', perDocumentLimit: 1 })
-                .execPopulate()
+        const films_id = playlist.films_id.map(id => id.toString())
 
-            playlistPopulated = playlistPopulated.view(true)
-            if (playlistPopulated.films.length > 0)
-                playlistPopulated.film_id = playlistPopulated.films[0]._id
+        let playlistPopulated = await playlist
+            .populate({
+                path: 'films_id', options: {
+                    retainNullValues: true
+                }
+            })
+            .execPopulate()
 
-            delete playlistPopulated.films
-            return success(res)(playlistPopulated)
+        playlistPopulated = playlistPopulated.view(true)
 
-        } else {
-            const films_id = playlist.films_id.map(id => id.toString())
-
-            let playlistPopulated = await playlist
-                .populate({
-                    path: 'films_id',  options: {
-                        retainNullValues: true
-                    }
-                })
-                .execPopulate()
-
-            playlistPopulated = playlistPopulated.view(true)
-
-            playlistPopulated.films = playlistPopulated.films.map((film, index) => film ? film.view(true) :
-                {
-                    id: films_id[index],
-                    isNonExisting: true
-                })
+        playlistPopulated.films = playlistPopulated.films.map((film, index) => film ? film.view(true) :
+            {
+                id: films_id[index],
+                isNonExisting: true
+            })
 
 
-            return success(res)(playlistPopulated)
-        }
+        return success(res)(playlistPopulated)
 
     } catch (err) {
         console.log(err)
@@ -102,35 +87,11 @@ const showAll = (req, res, next) => {
     let filter = user ? { $or: [{ 'author_id': user._id }, { 'is_public': true }] } : { 'is_public': true }
     filter = { ...filter, films_id: { $exists: true, $not: { $size: 0 } } }
 
-    {
-        /*  Playlist.aggregate([
-         {
-             "$match": filter
-         },
-         {
-             "$unwind": {
-                 "path": "$films_id",
-                 "preserveNullAndEmptyArrays": false
-             }
-         },
-         { "$lookup": {
-             "from": Film.collection.name,
-             "localField": "films_id",
-             "foreignField": "_id",
-             "as": "film",
-             
-           }
-         },
-         
-     ])
-         .then(success(res))
-         .catch(err => {
-             console.log(err)
-             next(err)
-         }) */
-    }//
+    let projection = ''
 
-    Playlist.find(filter)
+    if(req.query.playlistPage) projection = '-updatedAt -createdAt -author_id -is_public'
+
+    Playlist.find(filter, projection)
         .populate({ path: 'films_id', $exists: true, select: 'thumbnail', perDocumentLimit: 1 })
         .skip(skip)
         .limit(limit)

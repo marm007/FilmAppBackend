@@ -65,8 +65,6 @@ const index = async ({ query, user, params }, res, next) => {
 
 }
 
-
-
 const me = async ({ user, query }, res, next) => {
 
     const limit = parseInt(query.limit) || 10;
@@ -83,36 +81,42 @@ const me = async ({ user, query }, res, next) => {
 
     }
 
-    if (query.films || query.skipFilms !== undefined) {
+    if (query.films) {
         const skipFilms = query.skipFilms !== undefined ? parseInt(query.skipFilms) : skip
-        let films = await Film.find({ author_id: user._id })
+        let films = await Film.find({ author_id: user._id }, '-description -author_id -meta.likes -meta.dislikes -thumbnail -updatedAt')
             .skip(skipFilms).limit(limit).then(films => films.map(film => film.view(true)))
         responseObject = { ...responseObject, films }
-
     }
 
     if (query.playlists) {
-        let playlists = await Playlist.find({ author_id: user._id })
-            .skip(skip).limit(limit)
-            .then(playlists => playlists.map(playlist => playlist.view(true)))
+        const skipPlaylists = query.skipPlaylists !== undefined ? parseInt(query.skipPlaylists) : skip
+
+
+        let playlists = {}
+
+        if (query.populatePlaylists) {
+            playlists = await Playlist.find({ author_id: user._id }, '-updatedAt -createdAt -author_id -is_public')
+                .skip(skipPlaylists)
+                .limit(limit)
+                .populate({ path: 'films_id', select: 'thumbnail', perDocumentLimit: 1 })
+                .then(playlists => {
+                    return playlists.map(playlist => {
+                        playlist = playlist.view(true)
+                        if (playlist.films.length > 0)
+                            playlist.film_id = playlist.films[0]._id
+                        delete playlist.films
+                        return playlist
+                    })
+                })
+        } else {
+            playlists = await Playlist.find({ author_id: user._id }, '-updatedAt -createdAt -author_id -is_public')
+                .skip(skipPlaylists)
+                .limit(limit)
+                .then(playlists => playlists.map(playlist => playlist.view(true)))
+        }
+
         responseObject = { ...responseObject, playlists }
 
-    } else if (query.skipPlaylists !== undefined) {
-        const skipPlaylists = parseInt(query.skipPlaylists)
-        let playlists = await Playlist.find({ author_id: user._id })
-            .skip(skipPlaylists)
-            .limit(limit)
-            .populate({ path: 'films_id', select: 'thumbnail', perDocumentLimit: 1 })
-            .then(playlists => {
-                return playlists.map(playlist => {
-                    playlist = playlist.view(true)
-                    if (playlist.films.length > 0)
-                        playlist.film_id = playlist.films[0]._id
-                    delete playlist.films
-                    return playlist
-                })
-            })
-        responseObject = { ...responseObject, playlists }
     }
 
     if (query.details) {
@@ -162,7 +166,6 @@ const partialUpdate = async ({ body, user }, res, next) => {
         let me = await User.findById(user.id)
 
         if (!me) return notFound(res)(null)
-        let updateBody = {}
 
         if (body.password) me.password = body.password
         if (body.email) me.email = body.email

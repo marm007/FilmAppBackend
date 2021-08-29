@@ -406,14 +406,16 @@ const getAll = ({ query }, res, next) => {
     const skip = parseInt(query.skip) || 0;
 
     let find = { thumbnail: { $exists: true, $ne: null } };
+    
+    let fields = ''
+
+    if(query.preview) fields = '-description -author_id -meta.likes -meta.dislikes -thumbnail -updatedAt'
 
     if (query.exclude && !ObjectId.isValid(query.exclude)) return res.status(400).end();
 
     if (query.exclude) find = { ...find, _id: { $nin: [query.exclude] } };
 
-    if (query.search) find = { ...find, title: new RegExp(query.search) }
-
-    Film.find(find)
+    Film.find(find, fields)
         .skip(skip)
         .limit(limit)
         .then(film => film.map(film => film.view(true)))
@@ -589,8 +591,7 @@ const search = ({ params, query }, res, next) => {
 
     let projection = '_id title meta thumbnail author author_name description createdAt'
 
-    if (query.p)
-        projection = '_id';
+    if(query.searchPage) projection = '-meta.likes -meta.dislikes -author_id -thumbnail -updatedAt'
 
     if (query.sort) {
         if (query.sort === 'upload_date') {
