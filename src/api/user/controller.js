@@ -95,7 +95,7 @@ const me = async ({ user, query }, res, next) => {
         let playlists = {}
 
         if (query.populatePlaylists) {
-            playlists = await Playlist.find({ author_id: user._id }, '-updatedAt -createdAt -author_id -is_public')
+            playlists = await Playlist.find({ author_id: user._id }, '-updatedAt -createdAt -author_id')
                 .skip(skipPlaylists)
                 .limit(limit)
                 .populate({ path: 'films_id', select: 'thumbnail', perDocumentLimit: 1 })
@@ -109,7 +109,7 @@ const me = async ({ user, query }, res, next) => {
                     })
                 })
         } else {
-            playlists = await Playlist.find({ author_id: user._id }, '-updatedAt -createdAt -author_id -is_public')
+            playlists = await Playlist.find({ author_id: user._id }, '-updatedAt -createdAt -author_id')
                 .skip(skipPlaylists)
                 .limit(limit)
                 .then(playlists => playlists.map(playlist => playlist.view(true)))

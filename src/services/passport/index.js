@@ -72,7 +72,7 @@ passport.use('token', new JwtStrategy({
         ExtractJwt.fromAuthHeaderWithScheme('Bearer')
     ]),
     jsonWebTokenOptions: {
-        maxAge: '1d'
+        maxAge: '5m'
     }
 }, (payload, done) => {
     const { id } = payload;

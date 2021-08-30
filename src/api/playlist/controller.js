@@ -89,7 +89,7 @@ const showAll = (req, res, next) => {
 
     let projection = ''
 
-    if(req.query.playlistPage) projection = '-updatedAt -createdAt -author_id -is_public'
+    if(req.query.playlistPage) projection = '-updatedAt -createdAt -author_id'
 
     Playlist.find(filter, projection)
         .populate({ path: 'films_id', $exists: true, select: 'thumbnail', perDocumentLimit: 1 })

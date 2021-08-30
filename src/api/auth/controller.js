@@ -21,8 +21,8 @@ const auth = async (req, res, next) => {
             const refreshToken = await RefreshToken.create({
                 user: user._id,
                 token: crypto.randomBytes(40).toString('hex'),
-                expires: new Date(Date.now() + 2 * 60 * 1000),
-            })
+                expires: new Date(Date.now() + 24 * 60 * 60 * 1000), 
+            }) // expires in 1 day
             return success(res, 200)({ token: accessToken, refreshToken: refreshToken.token, user: user.view(true) })
         } catch (err) {
             return next(err)
@@ -77,7 +77,7 @@ const forgot =
             function (token, user, done) {
 
                 const content = 'Change password link:\n\n' +
-                    `${frontendUri}` + token + '\n\n';
+                    `${frontendUri}reset/` + token + '\n\n';
 
                 sendmail(user.email, 'Reset password!', content, function (err) {
                     done(err, 'done');
